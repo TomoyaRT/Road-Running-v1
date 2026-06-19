@@ -84,35 +84,85 @@
     }
     .carousel::-webkit-scrollbar { display: none; }
 
+    /* ── Card ─────────────────────────────────────────────────── */
     .card {
       scroll-snap-align: start;
       min-width: 100vw;
-      padding: 16px 20px 24px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
       overflow-y: auto;
     }
 
-    .card-title {
-      font-size: 20px;
-      font-weight: 700;
-      line-height: 1.3;
+    .card-img {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: var(--secondary-bg);
     }
 
-    .fields { display: flex; flex-direction: column; gap: 10px; }
+    .card-body {
+      padding: 16px 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+    }
 
-    .field-label {
+    /* 標題 + 城市徽章 */
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.35;
+      flex: 1;
+    }
+
+    .city-badge {
+      background: var(--secondary-bg);
+      color: var(--hint);
       font-size: 11px;
       font-weight: 600;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      color: var(--hint);
-      margin-bottom: 2px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-top: 3px;
     }
 
-    .field-value { font-size: 15px; }
+    /* 副標題（活動日期） */
+    .card-subtitle {
+      font-size: 13px;
+      color: var(--hint);
+    }
 
+    /* 分隔線 */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--secondary-bg);
+    }
+
+    /* 詳情欄位 */
+    .details { display: flex; flex-direction: column; gap: 9px; }
+
+    .detail-item { display: flex; flex-direction: column; gap: 2px; }
+
+    .detail-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--hint);
+      text-transform: uppercase;
+    }
+
+    .detail-value { font-size: 14px; }
+
+    /* 報名按鈕 */
     .reg-btn {
       display: block;
       background: var(--btn-bg);
@@ -177,23 +227,47 @@
       events.forEach((e, i) => {
         const card = document.createElement('div');
         card.className = 'card';
+
+        const imgHtml = e.image_url
+          ? `<img class="card-img" src="${safeUrl(e.image_url)}" alt="" loading="lazy">`
+          : '';
+
+        const cityHtml = e.city
+          ? `<span class="city-badge">${esc(e.city)}</span>`
+          : '';
+
+        const catHtml = (e.categories && e.categories.length > 0)
+          ? `<div class="detail-item">
+               <span class="detail-label">報名組別</span>
+               <span class="detail-value">${esc(e.categories.join(' / '))}</span>
+             </div>`
+          : '';
+
+        const regStart = e.reg_start || '?';
+        const regEnd = e.reg_end || '?';
+
         card.innerHTML = `
-          <div class="card-title">${esc(e.name)}</div>
-          <div class="fields">
-            <div>
-              <div class="field-label">活動日期</div>
-              <div class="field-value">${esc(e.race_date)}</div>
+          ${imgHtml}
+          <div class="card-body">
+            <div class="card-header">
+              <div class="card-title">${esc(e.name)}</div>
+              ${cityHtml}
             </div>
-            <div>
-              <div class="field-label">地點</div>
-              <div class="field-value">${esc(e.location)}</div>
+            <div class="card-subtitle">活動日期：${esc(e.race_date)}</div>
+            <hr class="divider">
+            <div class="details">
+              <div class="detail-item">
+                <span class="detail-label">報名時間</span>
+                <span class="detail-value">${esc(regStart)} ～ ${esc(regEnd)}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">活動地點</span>
+                <span class="detail-value">${esc(e.location)}</span>
+              </div>
+              ${catHtml}
             </div>
-            <div>
-              <div class="field-label">報名期間</div>
-              <div class="field-value">${esc(e.reg_start)} ～ ${esc(e.reg_end)}</div>
-            </div>
+            <a class="reg-btn" href="${safeUrl(e.url)}" target="_blank">立刻報名</a>
           </div>
-          <a class="reg-btn" href="${safeUrl(e.url)}" target="_blank">前往報名頁面</a>
         `;
         carousel.appendChild(card);
 

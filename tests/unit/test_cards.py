@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -9,6 +9,7 @@ from src.bot.cards import (
     build_nav_markup,
     format_card_text,
     format_carousel_text,
+    send_carousel_start,
     send_event_card,
 )
 from src.scraper.running_biji import RaceEvent
@@ -236,3 +237,36 @@ def test_build_nav_markup_always_has_reg_button():
     assert len(url_buttons) == 1
     assert url_buttons[0].url == "https://reg.example.com"
     assert url_buttons[0].text == "立刻報名"
+
+
+# ── send_carousel_start ───────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_send_carousel_start_uses_send_photo_when_image_present():
+    mock_bot = AsyncMock()
+    events = [_EVENT_WITH_IMAGE]
+    with patch(
+        "src.bot.cards.fetch_official_url_async", new=AsyncMock(return_value=None)
+    ):
+        await send_carousel_start(mock_bot, 123, events, "o", "all")
+    mock_bot.send_photo.assert_called_once()
+    call = mock_bot.send_photo.call_args
+    assert call.kwargs["photo"] == "https://example.com/image.jpg"
+    mock_bot.send_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_carousel_start_uses_placeholder_when_no_image():
+    from src.bot.cards import PLACEHOLDER_IMAGE_URL
+
+    mock_bot = AsyncMock()
+    events = [_EVENT]  # no image_url
+    with patch(
+        "src.bot.cards.fetch_official_url_async", new=AsyncMock(return_value=None)
+    ):
+        await send_carousel_start(mock_bot, 123, events, "o", "all")
+    mock_bot.send_photo.assert_called_once()
+    call = mock_bot.send_photo.call_args
+    assert call.kwargs["photo"] == PLACEHOLDER_IMAGE_URL
+    mock_bot.send_message.assert_not_called()

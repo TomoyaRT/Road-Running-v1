@@ -150,6 +150,8 @@ async def api_events() -> Response:
             "reg_start": e.reg_start.isoformat() if e.reg_start else None,
             "reg_end": e.reg_end.isoformat() if e.reg_end else None,
             "city": e.city,
+            "image_url": e.image_url,
+            "categories": e.categories,
         }
         for e in city_events
     ]

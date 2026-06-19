@@ -8,6 +8,8 @@ from src.scraper.running_biji import RaceEvent, fetch_official_url_async
 
 logger = logging.getLogger(__name__)
 
+PLACEHOLDER_IMAGE_URL = "https://placehold.co/600x300/eeeeee/999999.png"
+
 
 def format_card_text(event: RaceEvent) -> str:
     """建立活動卡片的 HTML 格式文字（單張卡片用）。"""
@@ -29,8 +31,10 @@ def format_carousel_text(event: RaceEvent, index: int, total: int) -> str:
     """建立輪播卡片的 HTML 格式文字（含進度指示）。"""
     reg_start = event.reg_start.strftime("%m/%d") if event.reg_start else "?"
     reg_end = event.reg_end.strftime("%m/%d") if event.reg_end else "?"
-    lines = [
-        f"<b>{event.name}</b>",
+    lines = [f"<b>{event.name}</b>"]
+    if event.city:
+        lines.append(event.city)
+    lines += [
         f"活動日期：{event.race_date.strftime('%Y-%m-%d')}",
         f"活動地點：{event.location}",
         "",
@@ -107,6 +111,17 @@ async def send_carousel_start(
     official_url = await fetch_official_url_async(event.url) or event.url
     text = format_carousel_text(event, 0, total)
     markup = build_nav_markup(event_type, 0, total, city, official_url)
-    await bot.send_message(
-        chat_id=chat_id, text=text, parse_mode="HTML", reply_markup=markup
-    )
+    photo = event.image_url or PLACEHOLDER_IMAGE_URL
+    try:
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=photo,
+            caption=text,
+            parse_mode="HTML",
+            reply_markup=markup,
+        )
+    except Exception:
+        logger.warning(f"send_photo failed for carousel {event.name}, fallback to text")
+        await bot.send_message(
+            chat_id=chat_id, text=text, parse_mode="HTML", reply_markup=markup
+        )

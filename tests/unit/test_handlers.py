@@ -366,7 +366,7 @@ async def test_nav_callback_edits_message_for_open_events(
     ):
         await nav_callback(mock_callback_update, mock_context)
 
-    mock_callback_update.callback_query.edit_message_text.assert_called_once()
+    mock_callback_update.callback_query.edit_message_media.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -388,10 +388,10 @@ async def test_nav_callback_shows_correct_event_index(
     ):
         await nav_callback(mock_callback_update, mock_context)
 
-    call = mock_callback_update.callback_query.edit_message_text.call_args
-    text = call.kwargs.get("text") or call.args[0]
-    assert "活動1" in text
-    assert "2 / 3" in text
+    call = mock_callback_update.callback_query.edit_message_media.call_args
+    media = call.kwargs.get("media") or call.args[0]
+    assert "活動1" in media.caption
+    assert "2 / 3" in media.caption
 
 
 @pytest.mark.asyncio
@@ -414,7 +414,7 @@ async def test_nav_callback_uses_official_url_when_available(
     ):
         await nav_callback(mock_callback_update, mock_context)
 
-    call = mock_callback_update.callback_query.edit_message_text.call_args
+    call = mock_callback_update.callback_query.edit_message_media.call_args
     markup = call.kwargs.get("reply_markup")
     reg_buttons = [btn for row in markup.inline_keyboard for btn in row if btn.url]
     assert reg_buttons[0].url == official

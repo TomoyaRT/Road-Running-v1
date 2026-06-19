@@ -7,6 +7,7 @@ from datetime import date
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InputMediaPhoto,
     KeyboardButton,
     ReplyKeyboardMarkup,
     Update,
@@ -15,6 +16,7 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from src.bot.cards import (
+    PLACEHOLDER_IMAGE_URL,
     build_nav_markup,
     format_carousel_text,
 )
@@ -297,7 +299,9 @@ async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     official_url = await fetch_official_url_async(event.url) or event.url
     text = format_carousel_text(event, index, total)
     markup = build_nav_markup(event_type, index, total, city, official_url)
-    await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=markup)
+    photo = event.image_url or PLACEHOLDER_IMAGE_URL
+    media = InputMediaPhoto(media=photo, caption=text, parse_mode="HTML")
+    await query.edit_message_media(media=media, reply_markup=markup)
 
 
 async def handle_text_message(

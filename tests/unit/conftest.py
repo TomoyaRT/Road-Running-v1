@@ -48,6 +48,7 @@ def mock_callback_update() -> MagicMock:
     callback_query.from_user = user
     callback_query.answer = AsyncMock()
     callback_query.edit_message_text = AsyncMock()
+    callback_query.edit_message_media = AsyncMock()
     callback_query.message = MagicMock(spec=Message)
     callback_query.message.chat = chat
 
