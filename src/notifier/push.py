@@ -11,22 +11,50 @@ from src.scraper.running_biji import RaceEvent, fetch_events, filter_open_events
 logger = logging.getLogger(__name__)
 
 _NO_EVENTS_TEXT = "今日沒有可報名的路跑活動，明天再來看看！"
+_MAX_LEN = 4096
 
 
 def build_notification_text(events: list[RaceEvent]) -> str:
-    """根據可報名活動清單，建立推播訊息文字。"""
     if not events:
         return _NO_EVENTS_TEXT
-
-    lines = [f"🏃 今日可報名的路跑活動（共 {len(events)} 筆）：\n"]
+    header = f"今日可報名的路跑活動（共 {len(events)} 筆）："
+    blocks: list[str] = []
     for e in events:
         end = e.reg_end.strftime("%m/%d") if e.reg_end else "?"
-        lines.append(f"• {e.name}（{e.location}）\n  截止：{end}  {e.url}")
-    return "\n".join(lines)
+        blocks.append(f"• {e.name}（{e.location}）\n  截止：{end}  {e.url}")
+    return header + "\n\n" + "\n\n".join(blocks)
+
+
+def _chunk_text(text: str) -> list[str]:
+    if len(text) <= _MAX_LEN:
+        return [text]
+    chunks: list[str] = []
+    current = ""
+    for block in text.split("\n\n"):
+        if len(block) > _MAX_LEN:
+            for line in block.split("\n"):
+                safe_line = line[:_MAX_LEN]
+                candidate = f"{current}\n{safe_line}" if current else safe_line
+                if len(candidate) <= _MAX_LEN:
+                    current = candidate
+                else:
+                    if current:
+                        chunks.append(current)
+                    current = safe_line
+        else:
+            candidate = f"{current}\n\n{block}" if current else block
+            if len(candidate) <= _MAX_LEN:
+                current = candidate
+            else:
+                if current:
+                    chunks.append(current)
+                current = block
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 async def notify_users(bot: Bot, hour: int) -> None:
-    """查詢指定小時的訂閱使用者，推播今日可報名活動。"""
     db = get_db()
     user_ids = db.get_users_for_hour(hour=hour)
 
@@ -41,10 +69,13 @@ async def notify_users(bot: Bot, hour: int) -> None:
         logger.info(f"Hour {hour}: no open events, skip")
         return
 
-    text = build_notification_text(open_events)
+    chunks = _chunk_text(build_notification_text(open_events))
     for uid in user_ids:
-        try:
-            await bot.send_message(chat_id=uid, text=text)
-            logger.info(f"Notified user {uid}")
-        except Exception:
-            logger.exception(f"Failed to notify user {uid}")
+        sent = 0
+        for i, chunk in enumerate(chunks):
+            try:
+                await bot.send_message(chat_id=uid, text=chunk)
+                sent += 1
+            except Exception:
+                logger.exception(f"Failed to notify user {uid} chunk {i}")
+        logger.info(f"Notified user {uid}: {sent}/{len(chunks)} chunks sent")
