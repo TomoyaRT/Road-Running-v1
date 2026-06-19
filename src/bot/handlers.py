@@ -315,11 +315,18 @@ async def handle_text_message(
         )
 
 
+def _get_cloud_run_url() -> str:
+    return (
+        os.environ.get("GCP_CLOUD_RUN_URL")
+        or os.environ.get("WEBHOOK_URL", "").rsplit("/webhook", 1)[0]
+    )
+
+
 async def _handle_open_events(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     assert update.message is not None
-    cloud_run_url = os.environ["GCP_CLOUD_RUN_URL"]
+    cloud_run_url = _get_cloud_run_url()
     await update.message.reply_text(
         "點擊下方按鈕瀏覽目前可報名的路跑活動：",
         reply_markup=InlineKeyboardMarkup(
@@ -339,7 +346,7 @@ async def _handle_upcoming_events(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     assert update.message is not None
-    cloud_run_url = os.environ["GCP_CLOUD_RUN_URL"]
+    cloud_run_url = _get_cloud_run_url()
     await update.message.reply_text(
         "點擊下方按鈕瀏覽 30 天內即將開放報名的活動：",
         reply_markup=InlineKeyboardMarkup(
