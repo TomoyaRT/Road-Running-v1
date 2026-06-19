@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 import requests
@@ -23,6 +23,8 @@ class RaceEvent:
     url: str
     reg_start: date | None
     reg_end: date | None
+    image_url: str | None = None
+    categories: list[str] = field(default_factory=list)
 
 
 def fetch_events(url: str = BASE_URL) -> list[RaceEvent]:
@@ -67,6 +69,7 @@ def _parse_row(row: Tag) -> RaceEvent | None:
         url=url,
         reg_start=reg_start,
         reg_end=reg_end,
+        image_url=_extract_image_url(row),
     )
 
 
@@ -81,6 +84,17 @@ def _extract_name_and_url(row: Tag) -> tuple[str, str] | None:
     href = str(link.get("href", ""))
     url = href if href.startswith("http") else f"https://running.biji.co{href}"
     return name, url
+
+
+def _extract_image_url(row: Tag) -> str | None:
+    """嘗試從活動列表行中取得活動縮圖 URL（非日曆圖示）。"""
+    for img in row.find_all("img"):
+        if not isinstance(img, Tag):
+            continue
+        src = str(img.get("src", ""))
+        if src and "calendar" not in src:
+            return src if src.startswith("http") else f"https://running.biji.co{src}"
+    return None
 
 
 def _extract_location(row: Tag) -> str:

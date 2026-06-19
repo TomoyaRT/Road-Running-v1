@@ -6,13 +6,22 @@ import os
 
 from quart import Quart, Response, request
 from telegram import Bot, Update
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 
 from src.bot.handlers import (
+    handle_text_message,
+    hour_callback,
+    modify_schedule_callback,
+    slot_callback,
     start_command,
-    subscribe_command,
     unsubscribe_command,
-    upcoming_events_callback,
 )
 from src.notifier.push import notify_users
 
@@ -24,17 +33,21 @@ logger = logging.getLogger(__name__)
 
 quart_app = Quart(__name__)
 
-_telegram_app = None
+_telegram_app: Application | None = None  # type: ignore[type-arg]
 
 
-def _build_app() -> object:
+def _build_app() -> Application:  # type: ignore[type-arg]
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("subscribe", subscribe_command))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
+    app.add_handler(CallbackQueryHandler(slot_callback, pattern=r"^slot:"))
+    app.add_handler(CallbackQueryHandler(hour_callback, pattern=r"^hour:"))
     app.add_handler(
-        CallbackQueryHandler(upcoming_events_callback, pattern="^upcoming_events$")
+        CallbackQueryHandler(modify_schedule_callback, pattern=r"^modify_schedule$")
+    )
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
     )
     return app
 
@@ -55,6 +68,7 @@ async def startup() -> None:
 
 @quart_app.route("/webhook", methods=["POST"])
 async def webhook() -> Response:
+    assert _telegram_app is not None
     secret = os.environ.get("WEBHOOK_SECRET", "")
     if secret and request.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
         return Response("Unauthorized", status=401)
@@ -68,6 +82,7 @@ async def webhook() -> Response:
 @quart_app.route("/notify", methods=["POST"])
 async def notify_endpoint() -> Response:
     """Cloud Scheduler 每小時觸發，推播當前台灣時段的訂閱者。"""
+    assert _telegram_app is not None
     tw_hour = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).hour
     bot: Bot = _telegram_app.bot
     await notify_users(bot=bot, hour=tw_hour)
