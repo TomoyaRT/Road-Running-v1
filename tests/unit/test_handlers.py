@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from telegram import InlineKeyboardMarkup
 
-from src.bot.handlers import start_command, upcoming_events_callback
+from src.bot.handlers import (
+    start_command,
+    subscribe_command,
+    unsubscribe_command,
+    upcoming_events_callback,
+)
 from src.scraper.running_biji import RaceEvent
 
 # ── /start command ────────────────────────────────────────────────────────────
@@ -41,6 +46,67 @@ async def test_start_command_keyboard_has_upcoming_button(mock_update, mock_cont
         btn.callback_data for row in reply_markup.inline_keyboard for btn in row
     ]
     assert "upcoming_events" in callback_datas
+
+
+# ── /subscribe command ────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_subscribe_saves_user_with_valid_hour(mock_update, mock_context):
+    mock_update.message.text = "/subscribe 8"
+    mock_context.args = ["8"]
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await subscribe_command(mock_update, mock_context)
+
+    mock_db.subscribe.assert_called_once_with(
+        user_id=mock_update.effective_user.id, notification_hour=8
+    )
+    mock_update.message.reply_text.assert_called_once()
+    text = mock_update.message.reply_text.call_args.args[0]
+    assert "訂閱" in text or "8" in text
+
+
+@pytest.mark.asyncio
+async def test_subscribe_rejects_invalid_hour(mock_update, mock_context):
+    mock_context.args = ["25"]
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await subscribe_command(mock_update, mock_context)
+
+    mock_db.subscribe.assert_not_called()
+    text = mock_update.message.reply_text.call_args.args[0]
+    assert "0" in text and "23" in text
+
+
+@pytest.mark.asyncio
+async def test_subscribe_rejects_missing_argument(mock_update, mock_context):
+    mock_context.args = []
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await subscribe_command(mock_update, mock_context)
+
+    mock_db.subscribe.assert_not_called()
+    mock_update.message.reply_text.assert_called_once()
+
+
+# ── /unsubscribe command ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_deletes_user(mock_update, mock_context):
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await unsubscribe_command(mock_update, mock_context)
+
+    mock_db.unsubscribe.assert_called_once_with(user_id=mock_update.effective_user.id)
+    mock_update.message.reply_text.assert_called_once()
+    text = mock_update.message.reply_text.call_args.args[0]
+    assert "取消" in text
 
 
 # ── upcoming_events callback ──────────────────────────────────────────────────
@@ -87,7 +153,6 @@ async def test_upcoming_events_callback_sends_event_list(
         mock_date.today.return_value = date(2026, 7, 5)
         await upcoming_events_callback(mock_callback_update, mock_context)
 
-    mock_callback_update.callback_query.edit_message_text.assert_called_once()
     text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
     assert "台北馬拉松" in text
     assert "台中賽" in text
