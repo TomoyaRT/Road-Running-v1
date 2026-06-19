@@ -44,10 +44,13 @@ async def startup() -> None:
     global _telegram_app
     _telegram_app = _build_app()
     await _telegram_app.initialize()
-    webhook_url = os.environ["WEBHOOK_URL"]
-    secret = os.environ.get("WEBHOOK_SECRET", "")
-    await _telegram_app.bot.set_webhook(url=webhook_url, secret_token=secret)
-    logger.info(f"Webhook set to {webhook_url}")
+    webhook_url = os.environ.get("WEBHOOK_URL", "")
+    if webhook_url:
+        secret = os.environ.get("WEBHOOK_SECRET", "")
+        await _telegram_app.bot.set_webhook(url=webhook_url, secret_token=secret)
+        logger.info(f"Webhook set to {webhook_url}")
+    else:
+        logger.warning("WEBHOOK_URL not set, skipping webhook registration")
 
 
 @quart_app.route("/webhook", methods=["POST"])
