@@ -1,0 +1,75 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REGION: us-central1
+  SERVICE: road-running-bot
+  REGISTRY: us-central1-docker.pkg.dev
+  REPO: road-running
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest tests/ -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
+
+      - name: Build and push image
+        id: build
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE }} \
+            --image "${{ steps.build.outputs.image }}" \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --min-instances 0 \
+            --max-instances 3 \
+            --memory 512Mi \
+            --cpu 1 \
+            --timeout 60 \
+            --project ${{ secrets.GCP_PROJECT_ID }} \
+            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" \
+            --set-env-vars "WEBHOOK_URL=${{ secrets.WEBHOOK_URL }}" \
+            --set-secrets "TELEGRAM_BOT_TOKEN=telegram-bot-token:latest" \
+            --set-secrets "WEBHOOK_SECRET=webhook-secret:latest"
