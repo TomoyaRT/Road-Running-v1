@@ -20,6 +20,7 @@ from telegram.ext import (
 from src.bot.handlers import (
     city_callback,
     city_only_callback,
+    get_db,
     handle_text_message,
     hour_callback,
     nav_callback,
@@ -33,6 +34,7 @@ from src.bot.handlers import (
 )
 from src.bot.webapp_api import validate_init_data
 from src.notifier.push import notify_users
+from src.scraper.crawler import crawl_and_store
 from src.scraper.running_biji import (
     fetch_events,
     filter_events_by_city,
@@ -115,6 +117,17 @@ async def notify_endpoint() -> Response:
     bot: Bot = _telegram_app.bot
     await notify_users(bot=bot, hour=tw_hour)
     return Response("ok", status=200)
+
+
+@quart_app.route("/crawl", methods=["POST"])
+async def crawl_endpoint() -> Response:
+    """Cloud Scheduler 定期觸發：爬取、過濾路跑、補齊圖片與報名連結後存進 DB。"""
+    try:
+        count = await crawl_and_store(get_db())
+        return Response(f"stored {count} events", status=200)
+    except Exception:
+        logger.exception("crawl failed")
+        return Response("crawl failed", status=500)
 
 
 @quart_app.route("/webapp")

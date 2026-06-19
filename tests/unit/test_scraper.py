@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from datetime import date
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from src.scraper.running_biji import (
+    RaceEvent,
     _parse_reg_dates,
+    enrich_event,
+    enrich_events,
     extract_city,
+    extract_og_image,
     filter_events_by_city,
     filter_open_events,
+    filter_running_events,
     filter_upcoming_events,
     parse_events_html,
 )
@@ -232,3 +240,113 @@ def test_filter_events_by_city_excludes_other_cities():
     events = parse_events_html(SAMPLE_HTML)
     taipei_only = filter_events_by_city(events, "台北市")
     assert not any(e.city != "台北市" for e in taipei_only)
+
+
+# ── filter_running_events ─────────────────────────────────────────────────────
+
+
+def _ev(name: str) -> RaceEvent:
+    return RaceEvent(
+        name=name,
+        race_date=date(2026, 11, 15),
+        location="台北市",
+        url="https://running.biji.co/x",
+        reg_start=date(2026, 6, 1),
+        reg_end=date(2026, 8, 31),
+    )
+
+
+def test_filter_running_keeps_marathon_and_road_run():
+    events = [_ev("2026台北馬拉松"), _ev("城市路跑賽"), _ev("陽明山越野跑")]
+    result = filter_running_events(events)
+    assert len(result) == 3
+
+
+def test_filter_running_excludes_cycling():
+    events = [_ev("2026台北馬拉松"), _ev("第十一屆龍井單車逍遙遊")]
+    result = filter_running_events(events)
+    names = [e.name for e in result]
+    assert "2026台北馬拉松" in names
+    assert all("單車" not in n for n in names)
+
+
+def test_filter_running_excludes_triathlon_and_swimming():
+    events = [
+        _ev("城市路跑"),
+        _ev("2026 Challenge Taiwan 鐵人三項"),
+        _ev("日月潭泳渡"),
+    ]
+    result = filter_running_events(events)
+    assert [e.name for e in result] == ["城市路跑"]
+
+
+# ── extract_og_image ──────────────────────────────────────────────────────────
+
+
+def test_extract_og_image_from_meta_property():
+    html = '<html><head><meta property="og:image" content="https://x.com/a.jpg"></head></html>'
+    assert extract_og_image(html) == "https://x.com/a.jpg"
+
+
+def test_extract_og_image_falls_back_to_twitter_image():
+    html = '<html><head><meta name="twitter:image" content="https://x.com/t.jpg"></head></html>'
+    assert extract_og_image(html) == "https://x.com/t.jpg"
+
+
+def test_extract_og_image_returns_none_when_absent():
+    html = "<html><head><title>no image</title></head></html>"
+    assert extract_og_image(html) is None
+
+
+# ── enrich_events ─────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_enrich_event_populates_reg_url_and_image():
+    event = _ev("台北馬拉松")
+    with (
+        patch(
+            "src.scraper.running_biji.fetch_official_url_async",
+            new=AsyncMock(return_value="https://ctrun.com.tw/Activity?EventMain_ID=1"),
+        ),
+        patch(
+            "src.scraper.running_biji.fetch_og_image",
+            return_value="https://ctrun.com.tw/banner.jpg",
+        ),
+    ):
+        result = await enrich_event(event)
+
+    assert result.official_url == "https://ctrun.com.tw/Activity?EventMain_ID=1"
+    assert result.image_url == "https://ctrun.com.tw/banner.jpg"
+
+
+@pytest.mark.asyncio
+async def test_enrich_event_no_image_when_no_reg_url():
+    event = _ev("台北馬拉松")
+    with patch(
+        "src.scraper.running_biji.fetch_official_url_async",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await enrich_event(event)
+
+    assert result.official_url is None
+    assert result.image_url is None
+
+
+@pytest.mark.asyncio
+async def test_enrich_events_processes_all():
+    events = [_ev("活動A"), _ev("活動B")]
+    with (
+        patch(
+            "src.scraper.running_biji.fetch_official_url_async",
+            new=AsyncMock(return_value="https://reg.example.com/1"),
+        ),
+        patch(
+            "src.scraper.running_biji.fetch_og_image",
+            return_value="https://reg.example.com/img.jpg",
+        ),
+    ):
+        result = await enrich_events(events)
+
+    assert len(result) == 2
+    assert all(e.image_url == "https://reg.example.com/img.jpg" for e in result)

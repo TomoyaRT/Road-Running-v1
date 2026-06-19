@@ -67,7 +67,7 @@ jobs:
             --max-instances 3 \
             --memory 512Mi \
             --cpu 1 \
-            --timeout 60 \
+            --timeout 600 \
             --project ${{ secrets.GCP_PROJECT_ID }} \
             --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" \
             --set-env-vars "WEBHOOK_URL=${{ secrets.WEBHOOK_URL }}" \

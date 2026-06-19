@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.db.firestore_client import FirestoreClient
+from src.scraper.running_biji import RaceEvent
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -129,3 +131,127 @@ def test_update_city_uses_correct_document(db, mock_firestore):
 
     mock_firestore.collection.assert_called_with("users")
     mock_firestore.collection.return_value.document.assert_called_with("456")
+
+
+# ── replace_events / get_events ───────────────────────────────────────────────
+
+
+def _sample_event() -> RaceEvent:
+    return RaceEvent(
+        name="台北馬拉松",
+        race_date=date(2026, 11, 15),
+        location="台北市",
+        url="https://running.biji.co/index.php?q=competition&act=info&cid=11111",
+        reg_start=date(2026, 6, 1),
+        reg_end=date(2026, 8, 31),
+        city="台北市",
+        image_url="https://reg.example.com/banner.jpg",
+        official_url="https://reg.example.com/signup",
+        categories=["半程馬拉松", "全程馬拉松"],
+    )
+
+
+def test_replace_events_writes_each_event_in_batch(db, mock_firestore):
+    mock_firestore.collection.return_value.stream.return_value = []
+    batch = mock_firestore.batch.return_value
+
+    db.replace_events([_sample_event()])
+
+    assert batch.set.call_count == 1
+    written = batch.set.call_args[0][1]
+    assert written["name"] == "台北馬拉松"
+    assert written["race_date"] == "2026-11-15"
+    assert written["image_url"] == "https://reg.example.com/banner.jpg"
+    assert written["official_url"] == "https://reg.example.com/signup"
+    assert written["categories"] == ["半程馬拉松", "全程馬拉松"]
+    batch.commit.assert_called()
+
+
+def test_replace_events_deletes_stale_docs(db, mock_firestore):
+    stale = MagicMock()
+    stale.id = "stale-doc-id"
+    stale.reference = MagicMock()
+    mock_firestore.collection.return_value.stream.return_value = [stale]
+    batch = mock_firestore.batch.return_value
+
+    db.replace_events([_sample_event()])
+
+    batch.delete.assert_called_once_with(stale.reference)
+
+
+def test_replace_events_uses_events_collection(db, mock_firestore):
+    mock_firestore.collection.return_value.stream.return_value = []
+    db.replace_events([_sample_event()])
+    mock_firestore.collection.assert_any_call("events")
+
+
+def test_replace_events_chunks_over_batch_limit(db, mock_firestore):
+    mock_firestore.collection.return_value.stream.return_value = []
+    batch = mock_firestore.batch.return_value
+    # 500 個唯一活動 → 超過 450 上限 → 應分 2 批 commit
+    events = [
+        RaceEvent(
+            name=f"活動{i}",
+            race_date=date(2026, 11, 15),
+            location="台北市",
+            url=f"https://running.biji.co/cid={i}",
+            reg_start=date(2026, 6, 1),
+            reg_end=date(2026, 8, 31),
+        )
+        for i in range(500)
+    ]
+
+    db.replace_events(events)
+
+    assert batch.set.call_count == 500
+    assert batch.commit.call_count == 2
+
+
+def test_get_events_returns_race_events(db, mock_firestore):
+    doc = MagicMock()
+    doc.to_dict.return_value = {
+        "name": "高雄夜跑",
+        "race_date": "2026-12-06",
+        "location": "高雄市",
+        "url": "https://running.biji.co/x",
+        "reg_start": "2026-06-05",
+        "reg_end": "2026-09-15",
+        "city": "高雄市",
+        "image_url": "https://reg.example.com/img.jpg",
+        "official_url": "https://reg.example.com/go",
+        "categories": ["10K"],
+    }
+    mock_firestore.collection.return_value.stream.return_value = [doc]
+
+    events = db.get_events()
+
+    assert len(events) == 1
+    e = events[0]
+    assert e.name == "高雄夜跑"
+    assert e.race_date == date(2026, 12, 6)
+    assert e.reg_start == date(2026, 6, 5)
+    assert e.image_url == "https://reg.example.com/img.jpg"
+    assert e.categories == ["10K"]
+
+
+def test_get_events_handles_null_reg_dates(db, mock_firestore):
+    doc = MagicMock()
+    doc.to_dict.return_value = {
+        "name": "無日期活動",
+        "race_date": "2026-12-06",
+        "location": "台中市",
+        "url": "https://running.biji.co/y",
+        "reg_start": None,
+        "reg_end": None,
+        "city": "台中市",
+        "image_url": None,
+        "official_url": None,
+        "categories": [],
+    }
+    mock_firestore.collection.return_value.stream.return_value = [doc]
+
+    events = db.get_events()
+
+    assert events[0].reg_start is None
+    assert events[0].reg_end is None
+    assert events[0].image_url is None

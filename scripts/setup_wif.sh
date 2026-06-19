@@ -31,6 +31,18 @@ if [[ -n "$CLOUD_RUN_URL" ]]; then
     --http-method=POST \
     --description="每小時推播台灣時段訂閱使用者" \
     --attempt-deadline=30s
+
+  echo ""
+  echo "=== 建立 Cloud Scheduler 爬蟲 job ==="
+  gcloud scheduler jobs create http crawl-events \
+    --project="$PROJECT" \
+    --location=asia-east1 \
+    --schedule="0 */6 * * *" \
+    --time-zone="Asia/Taipei" \
+    --uri="${CLOUD_RUN_URL}/crawl" \
+    --http-method=POST \
+    --description="每 6 小時爬取路跑活動、補齊圖片與報名連結存進 Firestore" \
+    --attempt-deadline=540s
   echo "Cloud Scheduler job 建立完成"
 else
   echo ""

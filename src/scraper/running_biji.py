@@ -3,13 +3,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from typing import TypeVar
 
 import requests
 from bs4 import BeautifulSoup, Tag
 
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 BASE_URL = "https://running.biji.co/?q=competition"
 _REG_DATE_RE = re.compile(r"報名日期:(\d{4}-\d{2}-\d{2}).*?~(\d{4}-\d{2}-\d{2})")
@@ -54,6 +59,28 @@ _SKIP_DOMAINS = {
 _REG_KEYWORDS = {"報名", "線上報名", "立刻報名", "我要報名", "Register"}
 
 _official_url_cache: dict[str, str | None] = {}
+_og_image_cache: dict[str, str | None] = {}
+
+# 專用 thread pool，避免 1-CPU Cloud Run 上 asyncio 預設 pool 只有 ~5 條而拖慢爬蟲
+_ENRICH_EXECUTOR = ThreadPoolExecutor(max_workers=16)
+
+
+async def _run_in_pool(fn: Callable[..., _T], *args: object) -> _T:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_ENRICH_EXECUTOR, fn, *args)
+
+
+# 非路跑活動關鍵字（自行車、鐵人、游泳等），用於過濾掉非路跑賽事
+_NON_RUNNING_KEYWORDS = (
+    "自行車",
+    "單車",
+    "鐵人",
+    "三鐵",
+    "三項",
+    "游泳",
+    "泳渡",
+    "登山",
+)
 
 
 @dataclass
@@ -222,18 +249,40 @@ def filter_events_by_city(events: list[RaceEvent], city: str) -> list[RaceEvent]
     return [e for e in events if e.city == city]
 
 
+def filter_running_events(events: list[RaceEvent]) -> list[RaceEvent]:
+    """只保留路跑活動，排除自行車、鐵人三項、游泳等非路跑賽事。"""
+    return [e for e in events if not any(kw in e.name for kw in _NON_RUNNING_KEYWORDS)]
+
+
+def extract_og_image(html: str) -> str | None:
+    """從 HTML 取出 og:image（找不到時退回 twitter:image）。"""
+    soup = BeautifulSoup(html, "html.parser")
+    og = soup.find("meta", property="og:image")
+    if isinstance(og, Tag):
+        content = og.get("content")
+        if content:
+            return str(content)
+    tw = soup.find("meta", attrs={"name": "twitter:image"})
+    if isinstance(tw, Tag):
+        content = tw.get("content")
+        if content:
+            return str(content)
+    return None
+
+
 def fetch_official_url(event_url: str) -> str | None:
-    """爬取官方報名連結（帶 in-memory cache 避免重複抓取）。"""
+    """爬取官方報名連結（成功結果帶 in-memory cache；失敗不快取以便下次重試）。"""
     if event_url in _official_url_cache:
         return _official_url_cache[event_url]
     result = _do_fetch_official_url(event_url)
-    _official_url_cache[event_url] = result
+    if result is not None:
+        _official_url_cache[event_url] = result
     return result
 
 
 async def fetch_official_url_async(event_url: str) -> str | None:
-    """非阻塞版本，使用 asyncio.to_thread 在 thread pool 執行。"""
-    return await asyncio.to_thread(fetch_official_url, event_url)
+    """非阻塞版本，在 thread pool 執行以支援高並行抓取。"""
+    return await _run_in_pool(fetch_official_url, event_url)
 
 
 def _do_fetch_official_url(event_url: str) -> str | None:
@@ -259,3 +308,40 @@ def _do_fetch_official_url(event_url: str) -> str | None:
     except Exception:
         logger.warning(f"fetch_official_url failed for {event_url}")
         return None
+
+
+def fetch_og_image(page_url: str) -> str | None:
+    """抓取頁面的 og:image（成功結果帶 in-memory cache；失敗不快取以便下次重試）。"""
+    if page_url in _og_image_cache:
+        return _og_image_cache[page_url]
+    result = _do_fetch_og_image(page_url)
+    if result is not None:
+        _og_image_cache[page_url] = result
+    return result
+
+
+def _do_fetch_og_image(page_url: str) -> str | None:
+    try:
+        resp = requests.get(page_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        return extract_og_image(resp.text)
+    except Exception:
+        logger.warning(f"fetch_og_image failed for {page_url}")
+        return None
+
+
+async def enrich_event(event: RaceEvent) -> RaceEvent:
+    """補齊單一活動的報名連結與封面圖（就地更新 event）。"""
+    reg_url = await fetch_official_url_async(event.url)
+    event.official_url = reg_url
+    if reg_url:
+        image = await _run_in_pool(fetch_og_image, reg_url)
+        if image:
+            event.image_url = image
+    return event
+
+
+async def enrich_events(events: list[RaceEvent]) -> list[RaceEvent]:
+    """並行補齊所有活動的報名連結與封面圖。"""
+    await asyncio.gather(*(enrich_event(e) for e in events))
+    return events
