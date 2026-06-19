@@ -77,7 +77,7 @@ async def test_notify_users_sends_footer_after_carousel():
     markup = call.kwargs.get("reply_markup")
     assert markup is not None
     buttons = [btn for row in markup.inline_keyboard for btn in row]
-    assert any(btn.callback_data == "modify_schedule" for btn in buttons)
+    assert any(btn.callback_data == "open_settings" for btn in buttons)
 
 
 @pytest.mark.asyncio

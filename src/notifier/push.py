@@ -58,13 +58,7 @@ async def _notify_one_user(
             chat_id=uid,
             text=_FOOTER_TEXT,
             reply_markup=InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "修改推播時間", callback_data="modify_schedule"
-                        )
-                    ]
-                ]
+                [[InlineKeyboardButton("設定", callback_data="open_settings")]]
             ),
         )
     except Exception:

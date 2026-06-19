@@ -30,6 +30,14 @@ class FirestoreClient:
             f"User {user_id} subscribed at hour {notification_hour}, city={preferred_city}"
         )
 
+    def update_city(self, user_id: int, preferred_city: str) -> None:
+        """只更新城市偏好，不動推播時段。"""
+        self._db.collection(_COLLECTION).document(str(user_id)).set(
+            {"preferred_city": preferred_city},
+            merge=True,
+        )
+        logger.info(f"User {user_id} updated city to {preferred_city}")
+
     def unsubscribe(self, user_id: int) -> None:
         """刪除使用者的通知訂閱。"""
         self._db.collection(_COLLECTION).document(str(user_id)).delete()

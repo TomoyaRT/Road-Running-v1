@@ -17,12 +17,16 @@ from telegram.ext import (
 
 from src.bot.handlers import (
     city_callback,
+    city_only_callback,
     handle_text_message,
     hour_callback,
-    modify_schedule_callback,
     nav_callback,
+    open_settings_callback,
+    settings_city_callback,
+    settings_time_callback,
     slot_callback,
     start_command,
+    unsubscribe_btn_callback,
     unsubscribe_command,
 )
 from src.notifier.push import notify_users
@@ -46,9 +50,19 @@ def _build_app() -> Application:  # type: ignore[type-arg]
     app.add_handler(CallbackQueryHandler(slot_callback, pattern=r"^slot:"))
     app.add_handler(CallbackQueryHandler(hour_callback, pattern=r"^hour:"))
     app.add_handler(CallbackQueryHandler(city_callback, pattern=r"^city:"))
+    app.add_handler(CallbackQueryHandler(city_only_callback, pattern=r"^city_only:"))
     app.add_handler(CallbackQueryHandler(nav_callback, pattern=r"^nav:"))
     app.add_handler(
-        CallbackQueryHandler(modify_schedule_callback, pattern=r"^modify_schedule$")
+        CallbackQueryHandler(open_settings_callback, pattern=r"^open_settings$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(settings_time_callback, pattern=r"^settings_time$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(settings_city_callback, pattern=r"^settings_city$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(unsubscribe_btn_callback, pattern=r"^unsubscribe_btn$")
     )
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)

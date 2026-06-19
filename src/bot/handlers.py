@@ -29,17 +29,19 @@ from src.scraper.running_biji import (
 
 logger = logging.getLogger(__name__)
 
-# 各時段不含右端點，避免邊界重疊
+# 4 個時段，每段 6 個（最後一段 4 個）
 _SLOT_HOURS: dict[str, list[int]] = {
-    "morning": list(range(5, 12)),  # 05:00 – 11:00
-    "afternoon": list(range(12, 18)),  # 12:00 – 17:00
-    "evening": list(range(18, 24)),  # 18:00 – 23:00
+    "s1": list(range(5, 11)),  # 05:00 – 10:00
+    "s2": list(range(10, 16)),  # 10:00 – 15:00
+    "s3": list(range(15, 21)),  # 15:00 – 20:00
+    "s4": list(range(20, 24)),  # 20:00 – 23:00
 }
 
 _SLOT_LABELS: dict[str, str] = {
-    "morning": "早上 05:00 - 12:00",
-    "afternoon": "下午 12:00 - 18:00",
-    "evening": "晚上 18:00 - 24:00",
+    "s1": "05:00 - 10:00",
+    "s2": "10:00 - 15:00",
+    "s3": "15:00 - 20:00",
+    "s4": "20:00 - 23:00",
 }
 
 _CITY_OPTIONS: list[tuple[str, str]] = [
@@ -57,7 +59,7 @@ _CITY_OPTIONS: list[tuple[str, str]] = [
 PERSISTENT_KEYBOARD = ReplyKeyboardMarkup(
     [
         [KeyboardButton("查詢可報名活動"), KeyboardButton("即將開放活動")],
-        [KeyboardButton("修改推播時間")],
+        [KeyboardButton("設定")],
     ],
     resize_keyboard=True,
     is_persistent=True,
@@ -71,6 +73,7 @@ WELCOME_TEXT = (
 
 _ASK_SLOT_TEXT = "請選擇你希望每天收到路跑活動通知的時段："
 _ASK_CITY_TEXT = "請選擇你希望收到哪個地區的路跑活動通知："
+_ASK_SETTINGS_TEXT = "請選擇設定項目："
 _NO_OPEN_EVENTS = "目前沒有正在開放報名的路跑活動，請稍後再試。"
 _NO_UPCOMING_EVENTS = "目前 30 天內沒有即將開放報名的活動。"
 
@@ -80,29 +83,32 @@ def get_db() -> FirestoreClient:
 
 
 def build_slot_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton(label, callback_data=f"slot:{key}")]
-            for key, label in _SLOT_LABELS.items()
-        ]
-    )
+    items = list(_SLOT_LABELS.items())
+    rows: list[list[InlineKeyboardButton]] = []
+    for i in range(0, len(items), 2):
+        rows.append(
+            [
+                InlineKeyboardButton(label, callback_data=f"slot:{key}")
+                for key, label in items[i : i + 2]
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
 
 
 def build_hour_keyboard(slot: str) -> InlineKeyboardMarkup:
     hours = _SLOT_HOURS.get(slot, [])
     rows: list[list[InlineKeyboardButton]] = []
-    for i in range(0, len(hours), 4):
+    for i in range(0, len(hours), 3):
         rows.append(
             [
                 InlineKeyboardButton(f"{h:02d}:00", callback_data=f"hour:{h}")
-                for h in hours[i : i + 4]
+                for h in hours[i : i + 3]
             ]
         )
     return InlineKeyboardMarkup(rows)
 
 
 def build_city_keyboard(hour: int) -> InlineKeyboardMarkup:
-    """建立城市選擇鍵盤，callback_data 帶入選定的 hour。"""
     rows: list[list[InlineKeyboardButton]] = []
     for i in range(0, len(_CITY_OPTIONS), 3):
         rows.append(
@@ -112,6 +118,31 @@ def build_city_keyboard(hour: int) -> InlineKeyboardMarkup:
             ]
         )
     return InlineKeyboardMarkup(rows)
+
+
+def build_city_only_keyboard() -> InlineKeyboardMarkup:
+    """城市選擇鍵盤，callback_data 使用 city_only: 前綴（不帶時段）。"""
+    rows: list[list[InlineKeyboardButton]] = []
+    for i in range(0, len(_CITY_OPTIONS), 3):
+        rows.append(
+            [
+                InlineKeyboardButton(label, callback_data=f"city_only:{key}")
+                for label, key in _CITY_OPTIONS[i : i + 3]
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
+
+
+def build_settings_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("修改推播時間", callback_data="settings_time"),
+                InlineKeyboardButton("修改推播地區", callback_data="settings_city"),
+            ],
+            [InlineKeyboardButton("取消訂閱", callback_data="unsubscribe_btn")],
+        ]
+    )
 
 
 def _city_display(city: str) -> str:
@@ -158,7 +189,6 @@ async def city_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     assert update.effective_user is not None
     await query.answer()
 
-    # callback_data: "city:{hour}:{city}"
     parts = query.data.split(":", 2)
     hour = int(parts[1])
     city = parts[2]
@@ -174,18 +204,70 @@ async def city_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
-async def modify_schedule_callback(
+async def open_settings_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
+    """顯示設定選單（由推播頁腳按鈕觸發）。"""
     query = update.callback_query
     assert query is not None
-    assert update.effective_chat is not None
     await query.answer()
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=_ASK_SLOT_TEXT,
-        reply_markup=build_slot_keyboard(),
+    await query.edit_message_text(
+        _ASK_SETTINGS_TEXT, reply_markup=build_settings_keyboard()
     )
+
+
+async def settings_time_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """修改推播時間：顯示時段選擇鍵盤。"""
+    query = update.callback_query
+    assert query is not None
+    await query.answer()
+    await query.edit_message_text(_ASK_SLOT_TEXT, reply_markup=build_slot_keyboard())
+
+
+async def settings_city_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """修改推播地區：顯示城市選擇鍵盤（不影響推播時間）。"""
+    query = update.callback_query
+    assert query is not None
+    await query.answer()
+    await query.edit_message_text(
+        _ASK_CITY_TEXT, reply_markup=build_city_only_keyboard()
+    )
+
+
+async def city_only_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """只更新城市偏好，不動推播時段。"""
+    query = update.callback_query
+    assert query is not None
+    assert query.data is not None
+    assert update.effective_user is not None
+    await query.answer()
+
+    city = query.data.split(":", 1)[1]
+    db = get_db()
+    db.update_city(user_id=update.effective_user.id, preferred_city=city)
+
+    city_label = _city_display(city)
+    await query.edit_message_text(f"已更新！將推播 {city_label} 的路跑活動給你。")
+
+
+async def unsubscribe_btn_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """透過按鈕取消訂閱。"""
+    query = update.callback_query
+    assert query is not None
+    assert update.effective_user is not None
+    await query.answer()
+
+    db = get_db()
+    db.unsubscribe(user_id=update.effective_user.id)
+    await query.edit_message_text("已取消訂閱，不再推播路跑通知。")
 
 
 async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -195,9 +277,8 @@ async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     assert query.data is not None
     await query.answer()
 
-    # callback_data: "nav:{type}:{index}:{city}"
     parts = query.data.split(":", 3)
-    event_type = parts[1]  # "o" (open) or "u" (upcoming)
+    event_type = parts[1]
     index = int(parts[2])
     city = parts[3]
 
@@ -230,9 +311,9 @@ async def handle_text_message(
         await _handle_open_events(update, context)
     elif text == "即將開放活動":
         await _handle_upcoming_events(update, context)
-    elif text == "修改推播時間":
+    elif text == "設定":
         await update.message.reply_text(
-            _ASK_SLOT_TEXT, reply_markup=build_slot_keyboard()
+            _ASK_SETTINGS_TEXT, reply_markup=build_settings_keyboard()
         )
 
 

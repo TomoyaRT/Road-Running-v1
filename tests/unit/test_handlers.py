@@ -8,15 +8,21 @@ from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 from src.bot.handlers import (
     build_city_keyboard,
+    build_city_only_keyboard,
     build_hour_keyboard,
+    build_settings_keyboard,
     build_slot_keyboard,
     city_callback,
+    city_only_callback,
     handle_text_message,
     hour_callback,
-    modify_schedule_callback,
     nav_callback,
+    open_settings_callback,
+    settings_city_callback,
+    settings_time_callback,
     slot_callback,
     start_command,
+    unsubscribe_btn_callback,
     unsubscribe_command,
 )
 from src.scraper.running_biji import RaceEvent
@@ -53,10 +59,8 @@ async def test_start_command_sends_slot_selection_keyboard(mock_update, mock_con
 
 
 @pytest.mark.asyncio
-async def test_slot_callback_morning_shows_hour_buttons(
-    mock_callback_update, mock_context
-):
-    mock_callback_update.callback_query.data = "slot:morning"
+async def test_slot_callback_shows_hour_buttons(mock_callback_update, mock_context):
+    mock_callback_update.callback_query.data = "slot:s1"
     await slot_callback(mock_callback_update, mock_context)
 
     mock_callback_update.callback_query.edit_message_text.assert_called_once()
@@ -68,10 +72,10 @@ async def test_slot_callback_morning_shows_hour_buttons(
 
 
 @pytest.mark.asyncio
-async def test_slot_callback_shows_hours_in_selected_range(
+async def test_slot_callback_shows_hours_in_s1_range(
     mock_callback_update, mock_context
 ):
-    mock_callback_update.callback_query.data = "slot:morning"
+    mock_callback_update.callback_query.data = "slot:s1"
     await slot_callback(mock_callback_update, mock_context)
 
     call = mock_callback_update.callback_query.edit_message_text.call_args
@@ -81,7 +85,24 @@ async def test_slot_callback_shows_hours_in_selected_range(
         for row in markup.inline_keyboard
         for btn in row
     ]
-    assert all(5 <= h <= 11 for h in hours)
+    assert set(hours) == {5, 6, 7, 8, 9, 10}
+
+
+@pytest.mark.asyncio
+async def test_slot_callback_shows_hours_in_s4_range(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "slot:s4"
+    await slot_callback(mock_callback_update, mock_context)
+
+    call = mock_callback_update.callback_query.edit_message_text.call_args
+    markup = call.kwargs.get("reply_markup")
+    hours = [
+        int(btn.callback_data.split(":")[1])
+        for row in markup.inline_keyboard
+        for btn in row
+    ]
+    assert set(hours) == {20, 21, 22, 23}
 
 
 # ── hour_callback ──────────────────────────────────────────────────────────────
@@ -175,22 +196,139 @@ async def test_city_callback_shows_confirmation(mock_callback_update, mock_conte
     assert "設定完成" in text
 
 
-# ── modify_schedule_callback ───────────────────────────────────────────────────
+# ── open_settings_callback ─────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_modify_schedule_callback_sends_slot_keyboard(
+async def test_open_settings_callback_shows_settings_menu(
     mock_callback_update, mock_context
 ):
-    mock_callback_update.callback_query.data = "modify_schedule"
-    mock_context.bot = AsyncMock()
+    mock_callback_update.callback_query.data = "open_settings"
+    await open_settings_callback(mock_callback_update, mock_context)
 
-    await modify_schedule_callback(mock_callback_update, mock_context)
-
-    mock_context.bot.send_message.assert_called_once()
-    call = mock_context.bot.send_message.call_args
+    mock_callback_update.callback_query.edit_message_text.assert_called_once()
+    call = mock_callback_update.callback_query.edit_message_text.call_args
     markup = call.kwargs.get("reply_markup")
     assert isinstance(markup, InlineKeyboardMarkup)
+    all_data = [
+        btn.callback_data
+        for row in markup.inline_keyboard
+        for btn in row
+        if btn.callback_data
+    ]
+    assert "settings_time" in all_data
+    assert "settings_city" in all_data
+    assert "unsubscribe_btn" in all_data
+
+
+# ── settings_time_callback ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_settings_time_callback_shows_slot_keyboard(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "settings_time"
+    await settings_time_callback(mock_callback_update, mock_context)
+
+    call = mock_callback_update.callback_query.edit_message_text.call_args
+    markup = call.kwargs.get("reply_markup")
+    assert isinstance(markup, InlineKeyboardMarkup)
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert any(d.startswith("slot:") for d in all_data)
+
+
+# ── settings_city_callback ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_settings_city_callback_shows_city_only_keyboard(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "settings_city"
+    await settings_city_callback(mock_callback_update, mock_context)
+
+    call = mock_callback_update.callback_query.edit_message_text.call_args
+    markup = call.kwargs.get("reply_markup")
+    assert isinstance(markup, InlineKeyboardMarkup)
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert any(d.startswith("city_only:") for d in all_data)
+
+
+# ── city_only_callback ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_city_only_callback_calls_update_city(mock_callback_update, mock_context):
+    mock_callback_update.callback_query.data = "city_only:台中市"
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await city_only_callback(mock_callback_update, mock_context)
+
+    mock_db.update_city.assert_called_once_with(
+        user_id=mock_callback_update.effective_user.id,
+        preferred_city="台中市",
+    )
+
+
+@pytest.mark.asyncio
+async def test_city_only_callback_does_not_touch_hour(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "city_only:all"
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await city_only_callback(mock_callback_update, mock_context)
+
+    mock_db.subscribe.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_city_only_callback_shows_confirmation(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "city_only:高雄市"
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await city_only_callback(mock_callback_update, mock_context)
+
+    text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
+    assert "高雄市" in text
+
+
+# ── unsubscribe_btn_callback ───────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_btn_callback_deletes_user(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "unsubscribe_btn"
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await unsubscribe_btn_callback(mock_callback_update, mock_context)
+
+    mock_db.unsubscribe.assert_called_once_with(
+        user_id=mock_callback_update.effective_user.id
+    )
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_btn_callback_shows_confirmation(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "unsubscribe_btn"
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await unsubscribe_btn_callback(mock_callback_update, mock_context)
+
+    text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
+    assert "取消" in text
 
 
 # ── nav_callback ──────────────────────────────────────────────────────────────
@@ -359,15 +497,22 @@ async def test_handle_text_upcoming_events_sends_carousel(mock_update, mock_cont
 
 
 @pytest.mark.asyncio
-async def test_handle_text_modify_schedule_sends_slot_keyboard(
-    mock_update, mock_context
-):
-    mock_update.message.text = "修改推播時間"
+async def test_handle_text_settings_shows_settings_keyboard(mock_update, mock_context):
+    mock_update.message.text = "設定"
     await handle_text_message(mock_update, mock_context)
 
     mock_update.message.reply_text.assert_called_once()
     markup = mock_update.message.reply_text.call_args.kwargs.get("reply_markup")
     assert isinstance(markup, InlineKeyboardMarkup)
+    all_data = [
+        btn.callback_data
+        for row in markup.inline_keyboard
+        for btn in row
+        if btn.callback_data
+    ]
+    assert "settings_time" in all_data
+    assert "settings_city" in all_data
+    assert "unsubscribe_btn" in all_data
 
 
 # ── /unsubscribe ──────────────────────────────────────────────────────────────
@@ -388,31 +533,75 @@ async def test_unsubscribe_deletes_user(mock_update, mock_context):
 # ── build_hour_keyboard ────────────────────────────────────────────────────────
 
 
-def test_build_hour_keyboard_morning_has_correct_range():
-    markup = build_hour_keyboard("morning")
+def test_build_hour_keyboard_s1_has_correct_range():
+    markup = build_hour_keyboard("s1")
     hours = [
         int(btn.callback_data.split(":")[1])
         for row in markup.inline_keyboard
         for btn in row
     ]
-    assert set(hours) == set(range(5, 12))
+    assert set(hours) == {5, 6, 7, 8, 9, 10}
 
 
-def test_build_hour_keyboard_evening_has_correct_range():
-    markup = build_hour_keyboard("evening")
+def test_build_hour_keyboard_s2_has_correct_range():
+    markup = build_hour_keyboard("s2")
     hours = [
         int(btn.callback_data.split(":")[1])
         for row in markup.inline_keyboard
         for btn in row
     ]
-    assert set(hours) == set(range(18, 24))
+    assert set(hours) == {10, 11, 12, 13, 14, 15}
 
 
-def test_build_slot_keyboard_has_three_slots():
+def test_build_hour_keyboard_s3_has_correct_range():
+    markup = build_hour_keyboard("s3")
+    hours = [
+        int(btn.callback_data.split(":")[1])
+        for row in markup.inline_keyboard
+        for btn in row
+    ]
+    assert set(hours) == {15, 16, 17, 18, 19, 20}
+
+
+def test_build_hour_keyboard_s4_has_correct_range():
+    markup = build_hour_keyboard("s4")
+    hours = [
+        int(btn.callback_data.split(":")[1])
+        for row in markup.inline_keyboard
+        for btn in row
+    ]
+    assert set(hours) == {20, 21, 22, 23}
+
+
+def test_build_hour_keyboard_uses_three_per_row():
+    markup = build_hour_keyboard("s1")
+    for row in markup.inline_keyboard:
+        assert len(row) <= 3
+
+
+# ── build_slot_keyboard ────────────────────────────────────────────────────────
+
+
+def test_build_slot_keyboard_has_four_slots():
     markup = build_slot_keyboard()
     buttons = [btn for row in markup.inline_keyboard for btn in row]
-    assert len(buttons) == 3
+    assert len(buttons) == 4
     assert all(btn.callback_data.startswith("slot:") for btn in buttons)
+
+
+def test_build_slot_keyboard_has_two_per_row():
+    markup = build_slot_keyboard()
+    for row in markup.inline_keyboard:
+        assert len(row) == 2
+
+
+def test_build_slot_keyboard_covers_all_slots():
+    markup = build_slot_keyboard()
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert "slot:s1" in all_data
+    assert "slot:s2" in all_data
+    assert "slot:s3" in all_data
+    assert "slot:s4" in all_data
 
 
 # ── build_city_keyboard ────────────────────────────────────────────────────────
@@ -434,3 +623,34 @@ def test_build_city_keyboard_has_multiple_cities():
     markup = build_city_keyboard(hour=9)
     buttons = [btn for row in markup.inline_keyboard for btn in row]
     assert len(buttons) >= 3
+
+
+# ── build_settings_keyboard ───────────────────────────────────────────────────
+
+
+def test_build_settings_keyboard_has_time_city_and_unsubscribe():
+    markup = build_settings_keyboard()
+    all_data = [
+        btn.callback_data
+        for row in markup.inline_keyboard
+        for btn in row
+        if btn.callback_data
+    ]
+    assert "settings_time" in all_data
+    assert "settings_city" in all_data
+    assert "unsubscribe_btn" in all_data
+
+
+# ── build_city_only_keyboard ──────────────────────────────────────────────────
+
+
+def test_build_city_only_keyboard_uses_city_only_prefix():
+    markup = build_city_only_keyboard()
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert all(d.startswith("city_only:") for d in all_data)
+
+
+def test_build_city_only_keyboard_includes_all_option():
+    markup = build_city_only_keyboard()
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert "city_only:all" in all_data

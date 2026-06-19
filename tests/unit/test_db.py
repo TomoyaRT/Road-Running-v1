@@ -112,3 +112,20 @@ def test_get_users_for_hour_queries_correct_field(db, mock_firestore):
     mock_firestore.collection.return_value.where.assert_called_once_with(
         "notification_hour", "==", 20
     )
+
+
+# ── update_city ───────────────────────────────────────────────────────────────
+
+
+def test_update_city_only_updates_preferred_city(db, mock_firestore):
+    db.update_city(user_id=123, preferred_city="高雄市")
+
+    doc_ref = mock_firestore.collection.return_value.document.return_value
+    doc_ref.set.assert_called_once_with({"preferred_city": "高雄市"}, merge=True)
+
+
+def test_update_city_uses_correct_document(db, mock_firestore):
+    db.update_city(user_id=456, preferred_city="all")
+
+    mock_firestore.collection.assert_called_with("users")
+    mock_firestore.collection.return_value.document.assert_called_with("456")
