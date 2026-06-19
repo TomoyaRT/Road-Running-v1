@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.bot.cards import format_card_text, send_event_card
+from src.bot.cards import (
+    build_nav_markup,
+    format_card_text,
+    format_carousel_text,
+    send_event_card,
+)
 from src.scraper.running_biji import RaceEvent
 
 _EVENT = RaceEvent(
@@ -119,3 +124,115 @@ async def test_send_event_card_includes_reg_button():
     reg_buttons = [b for b in buttons if b.text == "立刻報名"]
     assert len(reg_buttons) == 1
     assert reg_buttons[0].url == _EVENT.url
+
+
+@pytest.mark.asyncio
+async def test_send_event_card_uses_official_url_when_present():
+    mock_bot = AsyncMock()
+    event = RaceEvent(
+        name="測試活動",
+        race_date=date(2026, 11, 15),
+        location="台北市",
+        url="https://running.biji.co/index.php?q=competition&act=info&cid=99999",
+        reg_start=date(2026, 6, 1),
+        reg_end=date(2026, 8, 31),
+        official_url="https://official-site.example.com/register",
+    )
+    await send_event_card(mock_bot, 123, event)
+
+    call = mock_bot.send_message.call_args
+    markup = call.kwargs.get("reply_markup")
+    buttons = [btn for row in markup.inline_keyboard for btn in row]
+    reg_buttons = [b for b in buttons if b.text == "立刻報名"]
+    assert reg_buttons[0].url == "https://official-site.example.com/register"
+
+
+# ── format_carousel_text ──────────────────────────────────────────────────────
+
+
+def test_format_carousel_text_contains_name_and_date():
+    text = format_carousel_text(_EVENT, index=0, total=5)
+    assert "台北馬拉松" in text
+    assert "2026-11-15" in text
+
+
+def test_format_carousel_text_contains_location_and_reg_period():
+    text = format_carousel_text(_EVENT, index=0, total=5)
+    assert "台北市" in text
+    assert "06/01" in text
+    assert "08/31" in text
+
+
+def test_format_carousel_text_shows_index_and_total():
+    text = format_carousel_text(_EVENT, index=2, total=10)
+    assert "3 / 10" in text
+
+
+def test_format_carousel_text_includes_categories_when_present():
+    text = format_carousel_text(_EVENT_WITH_IMAGE, index=0, total=1)
+    assert "42K全程組" in text
+
+
+# ── build_nav_markup ──────────────────────────────────────────────────────────
+
+
+def test_build_nav_markup_has_next_button_when_not_last():
+    markup = build_nav_markup(
+        "o", index=0, total=5, city="all", reg_url="https://example.com"
+    )
+    all_data = [
+        btn.callback_data
+        for row in markup.inline_keyboard
+        for btn in row
+        if btn.callback_data
+    ]
+    assert any("nav:o:1:all" in d for d in all_data)
+
+
+def test_build_nav_markup_has_prev_button_when_not_first():
+    markup = build_nav_markup(
+        "o", index=2, total=5, city="台北市", reg_url="https://example.com"
+    )
+    all_data = [
+        btn.callback_data
+        for row in markup.inline_keyboard
+        for btn in row
+        if btn.callback_data
+    ]
+    assert any("nav:o:1:台北市" in d for d in all_data)
+
+
+def test_build_nav_markup_no_prev_when_first():
+    markup = build_nav_markup(
+        "o", index=0, total=5, city="all", reg_url="https://example.com"
+    )
+    all_data = [
+        btn.callback_data
+        for row in markup.inline_keyboard
+        for btn in row
+        if btn.callback_data
+    ]
+    assert not any("nav:o:-1:" in d for d in all_data)
+
+
+def test_build_nav_markup_no_next_when_last():
+    markup = build_nav_markup(
+        "o", index=4, total=5, city="all", reg_url="https://example.com"
+    )
+    all_data = [
+        btn.callback_data
+        for row in markup.inline_keyboard
+        for btn in row
+        if btn.callback_data
+    ]
+    assert not any("nav:o:5:" in d for d in all_data)
+
+
+def test_build_nav_markup_always_has_reg_button():
+    markup = build_nav_markup(
+        "o", index=0, total=1, city="all", reg_url="https://reg.example.com"
+    )
+    url_buttons = [btn for row in markup.inline_keyboard for btn in row if btn.url]
+    assert len(url_buttons) == 1
+    assert url_buttons[0].url == "https://reg.example.com"
+    assert url_buttons[0].text == "立刻報名"

@@ -16,9 +16,11 @@ from telegram.ext import (
 )
 
 from src.bot.handlers import (
+    city_callback,
     handle_text_message,
     hour_callback,
     modify_schedule_callback,
+    nav_callback,
     slot_callback,
     start_command,
     unsubscribe_command,
@@ -43,6 +45,8 @@ def _build_app() -> Application:  # type: ignore[type-arg]
     app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
     app.add_handler(CallbackQueryHandler(slot_callback, pattern=r"^slot:"))
     app.add_handler(CallbackQueryHandler(hour_callback, pattern=r"^hour:"))
+    app.add_handler(CallbackQueryHandler(city_callback, pattern=r"^city:"))
+    app.add_handler(CallbackQueryHandler(nav_callback, pattern=r"^nav:"))
     app.add_handler(
         CallbackQueryHandler(modify_schedule_callback, pattern=r"^modify_schedule$")
     )

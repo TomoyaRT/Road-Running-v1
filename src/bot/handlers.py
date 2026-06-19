@@ -13,10 +13,16 @@ from telegram import (
 )
 from telegram.ext import ContextTypes
 
-from src.bot.cards import send_event_card
+from src.bot.cards import (
+    build_nav_markup,
+    format_carousel_text,
+    send_carousel_start,
+)
 from src.db.firestore_client import FirestoreClient
 from src.scraper.running_biji import (
     fetch_events,
+    fetch_official_url_async,
+    filter_events_by_city,
     filter_open_events,
     filter_upcoming_events,
 )
@@ -36,6 +42,18 @@ _SLOT_LABELS: dict[str, str] = {
     "evening": "晚上 18:00 - 24:00",
 }
 
+_CITY_OPTIONS: list[tuple[str, str]] = [
+    ("台北市", "台北市"),
+    ("新北市", "新北市"),
+    ("桃園市", "桃園市"),
+    ("台中市", "台中市"),
+    ("台南市", "台南市"),
+    ("高雄市", "高雄市"),
+    ("嘉義市", "嘉義市"),
+    ("新竹市", "新竹市"),
+    ("全部台灣", "all"),
+]
+
 PERSISTENT_KEYBOARD = ReplyKeyboardMarkup(
     [
         [KeyboardButton("查詢可報名活動"), KeyboardButton("即將開放活動")],
@@ -52,6 +70,7 @@ WELCOME_TEXT = (
 )
 
 _ASK_SLOT_TEXT = "請選擇你希望每天收到路跑活動通知的時段："
+_ASK_CITY_TEXT = "請選擇你希望收到哪個地區的路跑活動通知："
 _NO_OPEN_EVENTS = "目前沒有正在開放報名的路跑活動，請稍後再試。"
 _NO_UPCOMING_EVENTS = "目前 30 天內沒有即將開放報名的活動。"
 
@@ -82,6 +101,23 @@ def build_hour_keyboard(slot: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def build_city_keyboard(hour: int) -> InlineKeyboardMarkup:
+    """建立城市選擇鍵盤，callback_data 帶入選定的 hour。"""
+    rows: list[list[InlineKeyboardButton]] = []
+    for i in range(0, len(_CITY_OPTIONS), 3):
+        rows.append(
+            [
+                InlineKeyboardButton(label, callback_data=f"city:{hour}:{key}")
+                for label, key in _CITY_OPTIONS[i : i + 3]
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
+
+
+def _city_display(city: str) -> str:
+    return "全台灣" if city == "all" else city
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
     await update.message.reply_text(WELCOME_TEXT, reply_markup=PERSISTENT_KEYBOARD)
@@ -102,16 +138,39 @@ async def slot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def hour_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """使用者選擇推播時間後，進入城市選擇步驟（尚未儲存訂閱）。"""
+    query = update.callback_query
+    assert query is not None
+    assert query.data is not None
+    await query.answer()
+    hour = int(query.data.split(":", 1)[1])
+    await query.edit_message_text(
+        f"你選擇了每天 {hour:02d}:00 接收通知。\n\n{_ASK_CITY_TEXT}",
+        reply_markup=build_city_keyboard(hour),
+    )
+
+
+async def city_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """使用者選擇城市後，儲存訂閱並顯示確認訊息。"""
     query = update.callback_query
     assert query is not None
     assert query.data is not None
     assert update.effective_user is not None
     await query.answer()
-    hour = int(query.data.split(":", 1)[1])
+
+    # callback_data: "city:{hour}:{city}"
+    parts = query.data.split(":", 2)
+    hour = int(parts[1])
+    city = parts[2]
+
     db = get_db()
-    db.subscribe(user_id=update.effective_user.id, notification_hour=hour)
+    db.subscribe(
+        user_id=update.effective_user.id, notification_hour=hour, preferred_city=city
+    )
+
+    city_label = _city_display(city)
     await query.edit_message_text(
-        f"設定完成！每天 {hour:02d}:00 你會收到可報名的路跑活動通知。"
+        f"設定完成！每天 {hour:02d}:00 推播 {city_label} 可報名路跑活動給你。"
     )
 
 
@@ -127,6 +186,39 @@ async def modify_schedule_callback(
         text=_ASK_SLOT_TEXT,
         reply_markup=build_slot_keyboard(),
     )
+
+
+async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """輪播導航：更新訊息顯示上一張 / 下一張活動卡片。"""
+    query = update.callback_query
+    assert query is not None
+    assert query.data is not None
+    await query.answer()
+
+    # callback_data: "nav:{type}:{index}:{city}"
+    parts = query.data.split(":", 3)
+    event_type = parts[1]  # "o" (open) or "u" (upcoming)
+    index = int(parts[2])
+    city = parts[3]
+
+    events = fetch_events()
+    today = date.today()
+    if event_type == "o":
+        filtered = filter_open_events(events, today)
+    else:
+        filtered = filter_upcoming_events(events, today)
+
+    city_events = filter_events_by_city(filtered, city)
+    total = len(city_events)
+
+    if not city_events or index < 0 or index >= total:
+        return
+
+    event = city_events[index]
+    official_url = await fetch_official_url_async(event.url) or event.url
+    text = format_carousel_text(event, index, total)
+    markup = build_nav_markup(event_type, index, total, city, official_url)
+    await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=markup)
 
 
 async def handle_text_message(
@@ -154,8 +246,9 @@ async def _handle_open_events(
     if not open_events:
         await update.message.reply_text(_NO_OPEN_EVENTS)
         return
-    for event in open_events:
-        await send_event_card(context.bot, update.effective_chat.id, event)
+    await send_carousel_start(
+        context.bot, update.effective_chat.id, open_events, "o", "all"
+    )
 
 
 async def _handle_upcoming_events(
@@ -168,8 +261,9 @@ async def _handle_upcoming_events(
     if not upcoming:
         await update.message.reply_text(_NO_UPCOMING_EVENTS)
         return
-    for event in upcoming:
-        await send_event_card(context.bot, update.effective_chat.id, event)
+    await send_carousel_start(
+        context.bot, update.effective_chat.id, upcoming, "u", "all"
+    )
 
 
 async def unsubscribe_command(

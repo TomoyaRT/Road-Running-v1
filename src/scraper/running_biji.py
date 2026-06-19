@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -14,6 +15,46 @@ BASE_URL = "https://running.biji.co/?q=competition"
 _REG_DATE_RE = re.compile(r"報名日期:(\d{4}-\d{2}-\d{2}).*?~(\d{4}-\d{2}-\d{2})")
 _CAL_DATES_RE = re.compile(r"dates=(\d{4})(\d{2})(\d{2})/")
 
+_TW_CITIES = [
+    "台北市",
+    "新北市",
+    "桃園市",
+    "台中市",
+    "台南市",
+    "高雄市",
+    "基隆市",
+    "新竹市",
+    "嘉義市",
+    "宜蘭縣",
+    "新竹縣",
+    "苗栗縣",
+    "彰化縣",
+    "南投縣",
+    "雲林縣",
+    "嘉義縣",
+    "屏東縣",
+    "花蓮縣",
+    "台東縣",
+    "澎湖縣",
+    "金門縣",
+    "連江縣",
+]
+
+_SKIP_DOMAINS = {
+    "biji.co",
+    "google.com",
+    "google.com.tw",
+    "facebook.com",
+    "instagram.com",
+    "youtube.com",
+    "twitter.com",
+    "line.me",
+    "edh.tw",
+}
+_REG_KEYWORDS = {"報名", "線上報名", "立刻報名", "我要報名", "Register"}
+
+_official_url_cache: dict[str, str | None] = {}
+
 
 @dataclass
 class RaceEvent:
@@ -23,8 +64,18 @@ class RaceEvent:
     url: str
     reg_start: date | None
     reg_end: date | None
+    city: str = ""
     image_url: str | None = None
+    official_url: str | None = None
     categories: list[str] = field(default_factory=list)
+
+
+def extract_city(location: str) -> str:
+    """從地點字串中提取台灣縣市名稱。"""
+    for city in _TW_CITIES:
+        if location.startswith(city):
+            return city
+    return location
 
 
 def fetch_events(url: str = BASE_URL) -> list[RaceEvent]:
@@ -61,14 +112,16 @@ def _parse_row(row: Tag) -> RaceEvent | None:
 
     race_date = _parse_race_date(cal_href) or _fallback_race_date(row)
     reg_start, reg_end = _parse_reg_dates(cal_href)
+    location = _extract_location(row)
 
     return RaceEvent(
         name=name,
         race_date=race_date,
-        location=_extract_location(row),
+        location=location,
         url=url,
         reg_start=reg_start,
         reg_end=reg_end,
+        city=extract_city(location),
         image_url=_extract_image_url(row),
     )
 
@@ -160,3 +213,49 @@ def filter_upcoming_events(
     return [
         e for e in events if e.reg_start is not None and today < e.reg_start <= deadline
     ]
+
+
+def filter_events_by_city(events: list[RaceEvent], city: str) -> list[RaceEvent]:
+    """依城市篩選活動。city='all' 不篩選。"""
+    if city == "all":
+        return events
+    return [e for e in events if e.city == city]
+
+
+def fetch_official_url(event_url: str) -> str | None:
+    """爬取官方報名連結（帶 in-memory cache 避免重複抓取）。"""
+    if event_url in _official_url_cache:
+        return _official_url_cache[event_url]
+    result = _do_fetch_official_url(event_url)
+    _official_url_cache[event_url] = result
+    return result
+
+
+async def fetch_official_url_async(event_url: str) -> str | None:
+    """非阻塞版本，使用 asyncio.to_thread 在 thread pool 執行。"""
+    return await asyncio.to_thread(fetch_official_url, event_url)
+
+
+def _do_fetch_official_url(event_url: str) -> str | None:
+    """從活動詳情頁找出外部官方報名連結。"""
+    try:
+        resp = requests.get(
+            event_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}
+        )
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for link in soup.find_all("a", href=True):
+            if not isinstance(link, Tag):
+                continue
+            href = str(link.get("href", ""))
+            if not href.startswith("http"):
+                continue
+            if any(d in href for d in _SKIP_DOMAINS):
+                continue
+            text = link.get_text(strip=True)
+            if any(kw in text for kw in _REG_KEYWORDS):
+                return href
+        return None
+    except Exception:
+        logger.warning(f"fetch_official_url failed for {event_url}")
+        return None

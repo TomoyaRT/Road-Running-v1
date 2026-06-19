@@ -4,6 +4,8 @@ from datetime import date
 
 from src.scraper.running_biji import (
     _parse_reg_dates,
+    extract_city,
+    filter_events_by_city,
     filter_open_events,
     filter_upcoming_events,
     parse_events_html,
@@ -183,3 +185,50 @@ def test_filter_upcoming_events_excludes_beyond_days():
     # 縮短到 10 天，2026-07-10 開報距今 21 天，應排除
     upcoming = filter_upcoming_events(events, TODAY, days=10)
     assert not any("Upcoming" in n for n in upcoming)
+
+
+# ── extract_city ──────────────────────────────────────────────────────────────
+
+
+def test_extract_city_recognizes_taipei():
+    assert extract_city("台北市中山區") == "台北市"
+
+
+def test_extract_city_recognizes_exact_city():
+    assert extract_city("高雄市") == "高雄市"
+
+
+def test_extract_city_recognizes_county():
+    assert extract_city("花蓮縣壽豐鄉") == "花蓮縣"
+
+
+def test_extract_city_returns_full_string_when_unknown():
+    assert extract_city("某未知地點") == "某未知地點"
+
+
+def test_parse_row_sets_city_from_location():
+    events = parse_events_html(SAMPLE_HTML)
+    open_event = next(e for e in events if "Open" in e.name)
+    assert open_event.city == "台北市"
+
+
+# ── filter_events_by_city ─────────────────────────────────────────────────────
+
+
+def test_filter_events_by_city_returns_matching_events():
+    events = parse_events_html(SAMPLE_HTML)
+    taipei_events = filter_events_by_city(events, "台北市")
+    assert all(e.city == "台北市" for e in taipei_events)
+    assert len(taipei_events) >= 1
+
+
+def test_filter_events_by_city_all_returns_all():
+    events = parse_events_html(SAMPLE_HTML)
+    result = filter_events_by_city(events, "all")
+    assert result == events
+
+
+def test_filter_events_by_city_excludes_other_cities():
+    events = parse_events_html(SAMPLE_HTML)
+    taipei_only = filter_events_by_city(events, "台北市")
+    assert not any(e.city != "台北市" for e in taipei_only)

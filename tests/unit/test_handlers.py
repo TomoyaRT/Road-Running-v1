@@ -7,11 +7,14 @@ import pytest
 from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 from src.bot.handlers import (
+    build_city_keyboard,
     build_hour_keyboard,
     build_slot_keyboard,
+    city_callback,
     handle_text_message,
     hour_callback,
     modify_schedule_callback,
+    nav_callback,
     slot_callback,
     start_command,
     unsubscribe_command,
@@ -85,28 +88,90 @@ async def test_slot_callback_shows_hours_in_selected_range(
 
 
 @pytest.mark.asyncio
-async def test_hour_callback_saves_subscription(mock_callback_update, mock_context):
+async def test_hour_callback_shows_city_selection_keyboard(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "hour:9"
+    await hour_callback(mock_callback_update, mock_context)
+
+    mock_callback_update.callback_query.edit_message_text.assert_called_once()
+    call = mock_callback_update.callback_query.edit_message_text.call_args
+    markup = call.kwargs.get("reply_markup")
+    assert isinstance(markup, InlineKeyboardMarkup)
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert any(d.startswith("city:9:") for d in all_data)
+
+
+@pytest.mark.asyncio
+async def test_hour_callback_includes_selected_hour_in_city_callbacks(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "hour:20"
+    await hour_callback(mock_callback_update, mock_context)
+
+    call = mock_callback_update.callback_query.edit_message_text.call_args
+    markup = call.kwargs.get("reply_markup")
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert all(d.startswith("city:20:") for d in all_data)
+
+
+@pytest.mark.asyncio
+async def test_hour_callback_does_not_save_subscription(
+    mock_callback_update, mock_context
+):
     mock_callback_update.callback_query.data = "hour:8"
     mock_db = MagicMock()
 
     with patch("src.bot.handlers.get_db", return_value=mock_db):
         await hour_callback(mock_callback_update, mock_context)
 
+    mock_db.subscribe.assert_not_called()
+
+
+# ── city_callback ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_city_callback_saves_subscription(mock_callback_update, mock_context):
+    mock_callback_update.callback_query.data = "city:9:台北市"
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await city_callback(mock_callback_update, mock_context)
+
     mock_db.subscribe.assert_called_once_with(
-        user_id=mock_callback_update.effective_user.id, notification_hour=8
+        user_id=mock_callback_update.effective_user.id,
+        notification_hour=9,
+        preferred_city="台北市",
     )
 
 
 @pytest.mark.asyncio
-async def test_hour_callback_confirms_with_hour(mock_callback_update, mock_context):
-    mock_callback_update.callback_query.data = "hour:20"
+async def test_city_callback_saves_all_city(mock_callback_update, mock_context):
+    mock_callback_update.callback_query.data = "city:14:all"
     mock_db = MagicMock()
 
     with patch("src.bot.handlers.get_db", return_value=mock_db):
-        await hour_callback(mock_callback_update, mock_context)
+        await city_callback(mock_callback_update, mock_context)
+
+    mock_db.subscribe.assert_called_once_with(
+        user_id=mock_callback_update.effective_user.id,
+        notification_hour=14,
+        preferred_city="all",
+    )
+
+
+@pytest.mark.asyncio
+async def test_city_callback_shows_confirmation(mock_callback_update, mock_context):
+    mock_callback_update.callback_query.data = "city:9:台北市"
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await city_callback(mock_callback_update, mock_context)
 
     text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
-    assert "20:00" in text
+    assert "09:00" in text
+    assert "台北市" in text
     assert "設定完成" in text
 
 
@@ -128,6 +193,95 @@ async def test_modify_schedule_callback_sends_slot_keyboard(
     assert isinstance(markup, InlineKeyboardMarkup)
 
 
+# ── nav_callback ──────────────────────────────────────────────────────────────
+
+_SAMPLE_EVENTS_NAV = [
+    RaceEvent(
+        name=f"活動{i}",
+        race_date=date(2026, 11, i + 1),
+        location="台北市",
+        url=f"https://running.biji.co/index.php?q=competition&act=info&cid={i}",
+        reg_start=date(2026, 6, 1),
+        reg_end=date(2026, 8, 31),
+        city="台北市",
+    )
+    for i in range(3)
+]
+
+
+@pytest.mark.asyncio
+async def test_nav_callback_edits_message_for_open_events(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "nav:o:1:all"
+
+    with (
+        patch("src.bot.handlers.fetch_events", return_value=_SAMPLE_EVENTS_NAV),
+        patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS_NAV),
+        patch(
+            "src.bot.handlers.filter_events_by_city", return_value=_SAMPLE_EVENTS_NAV
+        ),
+        patch(
+            "src.bot.handlers.fetch_official_url_async",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        await nav_callback(mock_callback_update, mock_context)
+
+    mock_callback_update.callback_query.edit_message_text.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_nav_callback_shows_correct_event_index(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "nav:o:1:all"
+
+    with (
+        patch("src.bot.handlers.fetch_events", return_value=_SAMPLE_EVENTS_NAV),
+        patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS_NAV),
+        patch(
+            "src.bot.handlers.filter_events_by_city", return_value=_SAMPLE_EVENTS_NAV
+        ),
+        patch(
+            "src.bot.handlers.fetch_official_url_async",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        await nav_callback(mock_callback_update, mock_context)
+
+    call = mock_callback_update.callback_query.edit_message_text.call_args
+    text = call.kwargs.get("text") or call.args[0]
+    assert "活動1" in text
+    assert "2 / 3" in text
+
+
+@pytest.mark.asyncio
+async def test_nav_callback_uses_official_url_when_available(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "nav:o:0:all"
+    official = "https://official-reg.example.com"
+
+    with (
+        patch("src.bot.handlers.fetch_events", return_value=_SAMPLE_EVENTS_NAV),
+        patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS_NAV),
+        patch(
+            "src.bot.handlers.filter_events_by_city", return_value=_SAMPLE_EVENTS_NAV
+        ),
+        patch(
+            "src.bot.handlers.fetch_official_url_async",
+            new=AsyncMock(return_value=official),
+        ),
+    ):
+        await nav_callback(mock_callback_update, mock_context)
+
+    call = mock_callback_update.callback_query.edit_message_text.call_args
+    markup = call.kwargs.get("reply_markup")
+    reg_buttons = [btn for row in markup.inline_keyboard for btn in row if btn.url]
+    assert reg_buttons[0].url == official
+
+
 # ── handle_text_message ────────────────────────────────────────────────────────
 
 _SAMPLE_EVENTS = [
@@ -143,18 +297,22 @@ _SAMPLE_EVENTS = [
 
 
 @pytest.mark.asyncio
-async def test_handle_text_open_events_sends_cards(mock_update, mock_context):
+async def test_handle_text_open_events_sends_carousel(mock_update, mock_context):
     mock_update.message.text = "查詢可報名活動"
     mock_context.bot = AsyncMock()
 
     with (
         patch("src.bot.handlers.fetch_events", return_value=_SAMPLE_EVENTS),
         patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS),
-        patch("src.bot.handlers.send_event_card", new_callable=AsyncMock) as mock_card,
+        patch(
+            "src.bot.handlers.send_carousel_start", new_callable=AsyncMock
+        ) as mock_carousel,
     ):
         await handle_text_message(mock_update, mock_context)
 
-    mock_card.assert_called_once()
+    mock_carousel.assert_called_once()
+    assert mock_carousel.call_args.args[2] == _SAMPLE_EVENTS
+    assert mock_carousel.call_args.args[3] == "o"
 
 
 @pytest.mark.asyncio
@@ -173,7 +331,7 @@ async def test_handle_text_open_events_no_results(mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-async def test_handle_text_upcoming_events_sends_cards(mock_update, mock_context):
+async def test_handle_text_upcoming_events_sends_carousel(mock_update, mock_context):
     mock_update.message.text = "即將開放活動"
     mock_context.bot = AsyncMock()
 
@@ -190,11 +348,14 @@ async def test_handle_text_upcoming_events_sends_cards(mock_update, mock_context
     with (
         patch("src.bot.handlers.fetch_events", return_value=upcoming),
         patch("src.bot.handlers.filter_upcoming_events", return_value=upcoming),
-        patch("src.bot.handlers.send_event_card", new_callable=AsyncMock) as mock_card,
+        patch(
+            "src.bot.handlers.send_carousel_start", new_callable=AsyncMock
+        ) as mock_carousel,
     ):
         await handle_text_message(mock_update, mock_context)
 
-    mock_card.assert_called_once()
+    mock_carousel.assert_called_once()
+    assert mock_carousel.call_args.args[3] == "u"
 
 
 @pytest.mark.asyncio
@@ -252,3 +413,24 @@ def test_build_slot_keyboard_has_three_slots():
     buttons = [btn for row in markup.inline_keyboard for btn in row]
     assert len(buttons) == 3
     assert all(btn.callback_data.startswith("slot:") for btn in buttons)
+
+
+# ── build_city_keyboard ────────────────────────────────────────────────────────
+
+
+def test_build_city_keyboard_embeds_hour_in_callback_data():
+    markup = build_city_keyboard(hour=9)
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert all(d.startswith("city:9:") for d in all_data)
+
+
+def test_build_city_keyboard_includes_all_taiwan_option():
+    markup = build_city_keyboard(hour=9)
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert "city:9:all" in all_data
+
+
+def test_build_city_keyboard_has_multiple_cities():
+    markup = build_city_keyboard(hour=9)
+    buttons = [btn for row in markup.inline_keyboard for btn in row]
+    assert len(buttons) >= 3
