@@ -10,13 +10,13 @@ from telegram import (
     KeyboardButton,
     ReplyKeyboardMarkup,
     Update,
+    WebAppInfo,
 )
 from telegram.ext import ContextTypes
 
 from src.bot.cards import (
     build_nav_markup,
     format_carousel_text,
-    send_carousel_start,
 )
 from src.db.firestore_client import FirestoreClient
 from src.scraper.running_biji import (
@@ -74,8 +74,6 @@ WELCOME_TEXT = (
 _ASK_SLOT_TEXT = "請選擇你希望每天收到路跑活動通知的時段："
 _ASK_CITY_TEXT = "請選擇你希望收到哪個地區的路跑活動通知："
 _ASK_SETTINGS_TEXT = "請選擇設定項目："
-_NO_OPEN_EVENTS = "目前沒有正在開放報名的路跑活動，請稍後再試。"
-_NO_UPCOMING_EVENTS = "目前 30 天內沒有即將開放報名的活動。"
 
 
 def get_db() -> FirestoreClient:
@@ -321,14 +319,19 @@ async def _handle_open_events(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     assert update.message is not None
-    assert update.effective_chat is not None
-    events = fetch_events()
-    open_events = filter_open_events(events, date.today())
-    if not open_events:
-        await update.message.reply_text(_NO_OPEN_EVENTS)
-        return
-    await send_carousel_start(
-        context.bot, update.effective_chat.id, open_events, "o", "all"
+    cloud_run_url = os.environ["GCP_CLOUD_RUN_URL"]
+    await update.message.reply_text(
+        "點擊下方按鈕瀏覽目前可報名的路跑活動：",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "瀏覽可報名活動",
+                        web_app=WebAppInfo(url=f"{cloud_run_url}/webapp?type=open"),
+                    )
+                ]
+            ]
+        ),
     )
 
 
@@ -336,14 +339,19 @@ async def _handle_upcoming_events(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     assert update.message is not None
-    assert update.effective_chat is not None
-    events = fetch_events()
-    upcoming = filter_upcoming_events(events, date.today())
-    if not upcoming:
-        await update.message.reply_text(_NO_UPCOMING_EVENTS)
-        return
-    await send_carousel_start(
-        context.bot, update.effective_chat.id, upcoming, "u", "all"
+    cloud_run_url = os.environ["GCP_CLOUD_RUN_URL"]
+    await update.message.reply_text(
+        "點擊下方按鈕瀏覽 30 天內即將開放報名的活動：",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "瀏覽即將開放活動",
+                        web_app=WebAppInfo(url=f"{cloud_run_url}/webapp?type=upcoming"),
+                    )
+                ]
+            ]
+        ),
     )
 
 

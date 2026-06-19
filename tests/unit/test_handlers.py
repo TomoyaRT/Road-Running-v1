@@ -435,65 +435,38 @@ _SAMPLE_EVENTS = [
 
 
 @pytest.mark.asyncio
-async def test_handle_text_open_events_sends_carousel(mock_update, mock_context):
-    mock_update.message.text = "查詢可報名活動"
-    mock_context.bot = AsyncMock()
-
-    with (
-        patch("src.bot.handlers.fetch_events", return_value=_SAMPLE_EVENTS),
-        patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS),
-        patch(
-            "src.bot.handlers.send_carousel_start", new_callable=AsyncMock
-        ) as mock_carousel,
-    ):
-        await handle_text_message(mock_update, mock_context)
-
-    mock_carousel.assert_called_once()
-    assert mock_carousel.call_args.args[2] == _SAMPLE_EVENTS
-    assert mock_carousel.call_args.args[3] == "o"
-
-
-@pytest.mark.asyncio
-async def test_handle_text_open_events_no_results(mock_update, mock_context):
+async def test_handle_text_open_events_sends_webapp_button(mock_update, mock_context):
     mock_update.message.text = "查詢可報名活動"
 
-    with (
-        patch("src.bot.handlers.fetch_events", return_value=[]),
-        patch("src.bot.handlers.filter_open_events", return_value=[]),
-    ):
+    with patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}):
         await handle_text_message(mock_update, mock_context)
 
     mock_update.message.reply_text.assert_called_once()
-    text = mock_update.message.reply_text.call_args.args[0]
-    assert "沒有" in text or "目前" in text
+    markup = mock_update.message.reply_text.call_args.kwargs.get("reply_markup")
+    assert isinstance(markup, InlineKeyboardMarkup)
+    buttons = [btn for row in markup.inline_keyboard for btn in row]
+    assert any(
+        btn.web_app is not None and "type=open" in btn.web_app.url for btn in buttons
+    )
 
 
 @pytest.mark.asyncio
-async def test_handle_text_upcoming_events_sends_carousel(mock_update, mock_context):
+async def test_handle_text_upcoming_events_sends_webapp_button(
+    mock_update, mock_context
+):
     mock_update.message.text = "即將開放活動"
-    mock_context.bot = AsyncMock()
 
-    upcoming = [
-        RaceEvent(
-            name="台中賽",
-            race_date=date(2026, 12, 1),
-            location="台中市",
-            url="https://running.biji.co/index.php?q=competition&act=info&cid=22222",
-            reg_start=date(2026, 7, 10),
-            reg_end=date(2026, 9, 30),
-        )
-    ]
-    with (
-        patch("src.bot.handlers.fetch_events", return_value=upcoming),
-        patch("src.bot.handlers.filter_upcoming_events", return_value=upcoming),
-        patch(
-            "src.bot.handlers.send_carousel_start", new_callable=AsyncMock
-        ) as mock_carousel,
-    ):
+    with patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}):
         await handle_text_message(mock_update, mock_context)
 
-    mock_carousel.assert_called_once()
-    assert mock_carousel.call_args.args[3] == "u"
+    mock_update.message.reply_text.assert_called_once()
+    markup = mock_update.message.reply_text.call_args.kwargs.get("reply_markup")
+    assert isinstance(markup, InlineKeyboardMarkup)
+    buttons = [btn for row in markup.inline_keyboard for btn in row]
+    assert any(
+        btn.web_app is not None and "type=upcoming" in btn.web_app.url
+        for btn in buttons
+    )
 
 
 @pytest.mark.asyncio

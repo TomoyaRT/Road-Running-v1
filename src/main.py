@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import os
+from datetime import date
 
-from quart import Quart, Response, request
+from quart import Quart, Response, request, send_from_directory
 from telegram import Bot, Update
 from telegram.ext import (
     Application,
@@ -29,7 +31,14 @@ from src.bot.handlers import (
     unsubscribe_btn_callback,
     unsubscribe_command,
 )
+from src.bot.webapp_api import validate_init_data
 from src.notifier.push import notify_users
+from src.scraper.running_biji import (
+    fetch_events,
+    filter_events_by_city,
+    filter_open_events,
+    filter_upcoming_events,
+)
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -39,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 quart_app = Quart(__name__)
 
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _telegram_app: Application | None = None  # type: ignore[type-arg]
 
 
@@ -105,6 +115,49 @@ async def notify_endpoint() -> Response:
     bot: Bot = _telegram_app.bot
     await notify_users(bot=bot, hour=tw_hour)
     return Response("ok", status=200)
+
+
+@quart_app.route("/webapp")
+async def webapp_page() -> Response:
+    return await send_from_directory(_STATIC_DIR, "index.html")
+
+
+@quart_app.route("/api/events")
+async def api_events() -> Response:
+    init_data = request.headers.get("Authorization", "")
+    bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
+    if not validate_init_data(init_data, bot_token):
+        return Response("Unauthorized", status=401)
+
+    event_type = request.args.get("type", "open")
+    city = request.args.get("city", "all")
+
+    events = fetch_events()
+    today = date.today()
+    filtered = (
+        filter_upcoming_events(events, today)
+        if event_type == "upcoming"
+        else filter_open_events(events, today)
+    )
+    city_events = filter_events_by_city(filtered, city)
+
+    result = [
+        {
+            "name": e.name,
+            "race_date": e.race_date.isoformat(),
+            "location": e.location,
+            "url": e.url,
+            "reg_start": e.reg_start.isoformat() if e.reg_start else None,
+            "reg_end": e.reg_end.isoformat() if e.reg_end else None,
+            "city": e.city,
+        }
+        for e in city_events
+    ]
+    return Response(
+        json.dumps({"events": result}, ensure_ascii=False),
+        status=200,
+        content_type="application/json; charset=utf-8",
+    )
 
 
 @quart_app.route("/health")
