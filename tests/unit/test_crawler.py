@@ -83,3 +83,21 @@ async def test_crawl_and_store_skips_when_fetch_empty():
 
     assert count == 0
     db.replace_events.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_crawl_and_store_skips_when_relevant_empty():
+    """fetch 有資料但 filter 後無相關活動時，不可覆寫 DB（避免清空快取）。"""
+    db = MagicMock()
+
+    with (
+        patch("src.scraper.crawler.fetch_events", return_value=[_CLOSED]),
+        patch(
+            "src.scraper.crawler.enrich_events",
+            new=AsyncMock(side_effect=lambda evs: evs),
+        ),
+    ):
+        count = await crawl_and_store(db, today=TODAY)
+
+    assert count == 0
+    db.replace_events.assert_not_called()

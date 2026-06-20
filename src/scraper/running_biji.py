@@ -110,6 +110,11 @@ class _BijiEventDetail:
 _biji_detail_cache: dict[str, _BijiEventDetail] = {}
 
 
+def clear_enrich_cache() -> None:
+    """清除 biji 活動詳情快取（每次 crawl 前呼叫，避免同一 instance 服務過期資料）。"""
+    _biji_detail_cache.clear()
+
+
 def extract_city(location: str) -> str:
     """從地點字串中提取台灣縣市名稱。"""
     for city in _TW_CITIES:

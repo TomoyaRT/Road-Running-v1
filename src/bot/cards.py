@@ -9,9 +9,13 @@ from src.scraper.running_biji import RaceEvent
 
 logger = logging.getLogger(__name__)
 
+_cloud_run_url = (
+    os.environ.get("GCP_CLOUD_RUN_URL")
+    or os.environ.get("WEBHOOK_URL", "").rsplit("/webhook", 1)[0]
+)
 PLACEHOLDER_IMAGE_URL = (
-    f"{os.environ['GCP_CLOUD_RUN_URL'].rstrip('/')}/static/default-bg.jpg"
-    if os.environ.get("GCP_CLOUD_RUN_URL")
+    f"{_cloud_run_url.rstrip('/')}/static/default-bg.jpg"
+    if _cloud_run_url
     else "https://placehold.co/600x300/eeeeee/999999.png"
 )
 

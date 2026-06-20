@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from src.scraper.running_biji import (
     RaceEvent,
+    _BijiEventDetail,
     _extract_categories,
     _extract_organizer,
     _parse_reg_dates,
@@ -354,7 +355,6 @@ def test_extract_categories_returns_empty_when_absent():
 
 @pytest.mark.asyncio
 async def test_enrich_event_sets_official_url_image_organizer_categories():
-    from src.scraper.running_biji import _BijiEventDetail
 
     event = _ev("台北馬拉松")
     detail = _BijiEventDetail(
@@ -377,7 +377,6 @@ async def test_enrich_event_sets_official_url_image_organizer_categories():
 
 @pytest.mark.asyncio
 async def test_enrich_event_gets_image_even_without_official_url():
-    from src.scraper.running_biji import _BijiEventDetail
 
     event = _ev("台北馬拉松")
     detail = _BijiEventDetail(
@@ -398,7 +397,6 @@ async def test_enrich_event_gets_image_even_without_official_url():
 
 @pytest.mark.asyncio
 async def test_enrich_event_keeps_thumbnail_when_biji_has_no_image():
-    from src.scraper.running_biji import _BijiEventDetail
 
     event = _ev("台北馬拉松")
     event.image_url = "https://running.biji.co/thumbnail.jpg"
@@ -419,7 +417,6 @@ async def test_enrich_event_keeps_thumbnail_when_biji_has_no_image():
 
 @pytest.mark.asyncio
 async def test_enrich_events_processes_all():
-    from src.scraper.running_biji import _BijiEventDetail
 
     events = [_ev("活動A"), _ev("活動B")]
     detail = _BijiEventDetail(
@@ -436,3 +433,17 @@ async def test_enrich_events_processes_all():
 
     assert len(result) == 2
     assert all(e.image_url == "https://biji.co/img.jpg" for e in result)
+
+
+# ── clear_enrich_cache ────────────────────────────────────────────────────────
+
+
+def test_clear_enrich_cache_empties_cache():
+    from src.scraper.running_biji import _biji_detail_cache, clear_enrich_cache
+    from src.scraper.running_biji import _BijiEventDetail as _D
+
+    _biji_detail_cache["https://example.com/ev1"] = _D(
+        official_url=None, image_url=None, organizer=None, categories=[]
+    )
+    clear_enrich_cache()
+    assert "https://example.com/ev1" not in _biji_detail_cache
