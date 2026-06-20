@@ -5,7 +5,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.db.firestore_client import FirestoreClient
+from src.db.firestore_client import (
+    FirestoreClient,
+    _dict_to_event,
+    _event_to_dict,
+)
 from src.scraper.running_biji import RaceEvent
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -250,6 +254,21 @@ def test_get_events_returns_race_events(db, mock_firestore):
     assert e.reg_start == date(2026, 6, 5)
     assert e.image_url == "https://reg.example.com/img.jpg"
     assert e.categories == ["10K"]
+
+
+def test_event_source_round_trips_through_firestore():
+    """source 欄位必須寫入並讀回，否則跨來源活動會被誤標為 biji。"""
+    event = RaceEvent(
+        name="全統路跑",
+        race_date=date(2026, 8, 8),
+        location="嘉義市",
+        url="https://www.ctrun.com.tw/Activity?EventMain_ID=1",
+        reg_start=date(2026, 6, 1),
+        reg_end=date(2026, 7, 15),
+        source="ctrun",
+    )
+    restored = _dict_to_event(_event_to_dict(event))
+    assert restored.source == "ctrun"
 
 
 def test_get_events_handles_null_reg_dates(db, mock_firestore):

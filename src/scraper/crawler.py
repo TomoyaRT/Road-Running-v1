@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Callable
 from datetime import date
 from typing import Protocol
 
+from src.scraper import bao_ming, ctrun
+from src.scraper.dedup import merge_events
 from src.scraper.running_biji import (
     RaceEvent,
     clear_enrich_cache,
@@ -23,32 +27,63 @@ class _EventStore(Protocol):
 
 
 async def crawl_and_store(db: _EventStore, today: date | None = None) -> int:
-    """爬取運動筆記、過濾路跑、補齊圖片與報名連結後存進 DB。
+    """多來源爬取（運動筆記 + 報名網 + 全統）、過濾路跑、跨來源去重後存進 DB。
 
-    只保留目前可報名或 30 天內即將開放的活動（已截止的不存）。
-    回傳實際儲存的活動數量。
+    只保留目前可報名或 30 天內即將開放的活動。回傳去重後實際儲存的數量。
+    biji 為來源之一（不再是唯一）；任一來源失敗不影響其他來源。
     """
     today = today or tw_today()
     clear_enrich_cache()
-    raw = fetch_events()
-    logger.info(f"fetch_events: {len(raw)} total events")
-    if not raw:
-        logger.warning(
-            "fetch_events returned empty; skip replace to avoid wiping cache"
-        )
-        return 0
-    events = filter_running_events(raw)
-    logger.info(f"filter_running: {len(events)} running events")
-    relevant = filter_open_events(events, today) + filter_upcoming_events(events, today)
+
+    biji_events = await _collect_biji(today)
+    other_events = await _collect_other_sources(today)
+    all_events = biji_events + other_events
     logger.info(
-        f"filter_relevant: {len(relevant)} open/upcoming events (today={today})"
+        f"collected: biji={len(biji_events)} others={len(other_events)} "
+        f"total={len(all_events)}"
     )
-    if not relevant:
-        logger.warning(
-            f"No open/upcoming events for {today}; skip replace to avoid wiping cache"
-        )
+    if not all_events:
+        logger.warning("No events collected; skip replace to avoid wiping cache")
         return 0
-    await enrich_events(relevant)
-    db.replace_events(relevant)
-    logger.info(f"Crawl complete: stored {len(relevant)} running events")
-    return len(relevant)
+
+    merged = merge_events(all_events)
+    logger.info(f"after cross-source dedup: {len(merged)} unique events")
+    db.replace_events(merged)
+    return len(merged)
+
+
+def _filter_relevant(events: list[RaceEvent], today: date) -> list[RaceEvent]:
+    """只留路跑、且目前可報名或 30 天內即將開放的活動。"""
+    running = filter_running_events(events)
+    return filter_open_events(running, today) + filter_upcoming_events(running, today)
+
+
+async def _collect_biji(today: date) -> list[RaceEvent]:
+    raw = fetch_events()
+    logger.info(f"biji fetch: {len(raw)} events")
+    relevant = _filter_relevant(raw, today)
+    if relevant:
+        await enrich_events(relevant)
+    return relevant
+
+
+async def _collect_other_sources(today: date) -> list[RaceEvent]:
+    """bao-ming 與 ctrun 並行抓取；各自詳情頁已含完整欄位，無須額外 enrich。"""
+    fetched = await asyncio.gather(
+        asyncio.to_thread(_safe_fetch, bao_ming.fetch_events, "bao-ming"),
+        asyncio.to_thread(_safe_fetch, ctrun.fetch_events, "ctrun"),
+    )
+    collected: list[RaceEvent] = []
+    for events in fetched:
+        collected.extend(_filter_relevant(events, today))
+    return collected
+
+
+def _safe_fetch(fetch: Callable[[], list[RaceEvent]], name: str) -> list[RaceEvent]:
+    try:
+        events = fetch()
+        logger.info(f"{name} fetch: {len(events)} events")
+        return events
+    except Exception:
+        logger.exception(f"source {name} fetch failed")
+        return []

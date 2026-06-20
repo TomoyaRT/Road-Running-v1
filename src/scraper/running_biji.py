@@ -98,6 +98,7 @@ class RaceEvent:
     official_url: str | None = None
     organizer: str | None = None
     categories: list[str] = field(default_factory=list)
+    source: str = "biji"
 
 
 @dataclass
@@ -121,12 +122,28 @@ def _normalize_city(name: str) -> str:
 
 
 def extract_city(location: str) -> str:
-    """從地點字串中提取台灣縣市名稱。"""
+    """從地點字串中提取台灣縣市名稱（前綴比對，找不到回原字串）。"""
     location = _normalize_city(location)
     for city in _TW_CITIES:
         if location.startswith(city):
             return city
     return location
+
+
+def find_city(text: str) -> str:
+    """在任意文字中尋找最先出現的台灣縣市名稱（找不到回空字串）。
+
+    用於地址/場地等城市名非開頭的文字（例：「國立高雄科技大學…高雄市…」）。
+    """
+    text = _normalize_city(text)
+    best_pos = len(text)
+    best = ""
+    for city in _TW_CITIES:
+        pos = text.find(city)
+        if 0 <= pos < best_pos:
+            best_pos = pos
+            best = city
+    return best
 
 
 def fetch_events(url: str = BASE_URL) -> list[RaceEvent]:

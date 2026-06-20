@@ -29,6 +29,7 @@ def _event_to_dict(event: RaceEvent) -> dict[str, Any]:
         "official_url": event.official_url,
         "organizer": event.organizer,
         "categories": event.categories,
+        "source": event.source,
     }
 
 
@@ -45,6 +46,7 @@ def _dict_to_event(data: dict[str, Any]) -> RaceEvent:
         official_url=data.get("official_url"),
         organizer=data.get("organizer"),
         categories=data.get("categories", []),
+        source=data.get("source", "biji"),
     )
 
 
