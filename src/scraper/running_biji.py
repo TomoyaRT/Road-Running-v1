@@ -115,8 +115,13 @@ def clear_enrich_cache() -> None:
     _biji_detail_cache.clear()
 
 
+def _normalize_city(name: str) -> str:
+    return name.replace("臺", "台")
+
+
 def extract_city(location: str) -> str:
     """從地點字串中提取台灣縣市名稱。"""
+    location = _normalize_city(location)
     for city in _TW_CITIES:
         if location.startswith(city):
             return city
@@ -264,7 +269,7 @@ def filter_events_by_city(events: list[RaceEvent], city: str) -> list[RaceEvent]
     """依城市篩選活動。city='all' 不篩選。"""
     if city == "all":
         return events
-    return [e for e in events if e.city == city]
+    return [e for e in events if _normalize_city(e.city) == _normalize_city(city)]
 
 
 def filter_running_events(events: list[RaceEvent]) -> list[RaceEvent]:

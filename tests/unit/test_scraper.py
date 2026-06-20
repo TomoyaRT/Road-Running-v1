@@ -11,6 +11,7 @@ from src.scraper.running_biji import (
     _BijiEventDetail,
     _extract_categories,
     _extract_organizer,
+    _normalize_city,
     _parse_reg_dates,
     enrich_event,
     enrich_events,
@@ -244,6 +245,77 @@ def test_filter_events_by_city_excludes_other_cities():
     events = parse_events_html(SAMPLE_HTML)
     taipei_only = filter_events_by_city(events, "台北市")
     assert not any(e.city != "台北市" for e in taipei_only)
+
+
+# ── _normalize_city ───────────────────────────────────────────────────────────
+
+
+def test_normalize_city_replaces_trad_with_simplified():
+    assert _normalize_city("臺北市") == "台北市"
+    assert _normalize_city("臺中市") == "台中市"
+    assert _normalize_city("臺南市") == "台南市"
+    assert _normalize_city("臺東縣") == "台東縣"
+
+
+def test_normalize_city_leaves_simplified_unchanged():
+    assert _normalize_city("台北市") == "台北市"
+    assert _normalize_city("高雄市") == "高雄市"
+
+
+# ── extract_city with 臺 ──────────────────────────────────────────────────────
+
+
+def test_extract_city_normalizes_trad_taipei():
+    assert extract_city("臺北市大安區") == "台北市"
+
+
+def test_extract_city_normalizes_trad_taichung():
+    assert extract_city("臺中市") == "台中市"
+
+
+def test_extract_city_normalizes_trad_tainan():
+    assert extract_city("臺南市") == "台南市"
+
+
+def test_extract_city_normalizes_trad_taitung():
+    assert extract_city("臺東縣") == "台東縣"
+
+
+# ── filter_events_by_city 臺/台 cross-normalization ──────────────────────────
+
+
+def test_filter_events_by_city_matches_trad_city_with_simplified_preference():
+    """DB 中 city='臺北市' 應能被 preferred_city='台北市' 命中。"""
+    events = [
+        RaceEvent(
+            name="臺北馬拉松",
+            race_date=date(2026, 11, 15),
+            location="臺北市大安區",
+            url="https://running.biji.co/x",
+            reg_start=date(2026, 6, 1),
+            reg_end=date(2026, 8, 31),
+            city="臺北市",
+        )
+    ]
+    result = filter_events_by_city(events, "台北市")
+    assert len(result) == 1
+
+
+def test_filter_events_by_city_matches_simplified_city_with_trad_preference():
+    """反向：event.city='台北市' 可被 preferred_city='臺北市' 命中。"""
+    events = [
+        RaceEvent(
+            name="台北馬拉松",
+            race_date=date(2026, 11, 15),
+            location="台北市",
+            url="https://running.biji.co/x",
+            reg_start=date(2026, 6, 1),
+            reg_end=date(2026, 8, 31),
+            city="台北市",
+        )
+    ]
+    result = filter_events_by_city(events, "臺北市")
+    assert len(result) == 1
 
 
 # ── filter_running_events ─────────────────────────────────────────────────────
