@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import TypeVar
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup, Tag
@@ -60,6 +60,7 @@ _SKIP_DOMAINS = {
     "edh.tw",
 }
 _REG_KEYWORDS = {"報名", "線上報名", "立刻報名", "我要報名", "Register"}
+_OFFICIAL_KEYWORDS = {"官方網站", "活動官方網站"}
 _BROCHURE_KEYWORDS = {"活動簡章", "簡章", "賽事簡章"}
 
 # 專用 thread pool，避免 1-CPU Cloud Run 上 asyncio 預設 pool 只有 ~5 條而拖慢爬蟲
@@ -308,16 +309,30 @@ def extract_og_image(html: str, base_url: str = "") -> str | None:
     return None
 
 
+def _is_skipped_url(href: str) -> bool:
+    """判斷連結是否該略過：社群/搜尋等雜訊網域，或 biji 自家推廣的裸首頁。
+
+    biji 詳情頁有個含「報名」字樣、指向 irunner 首頁（path 為空）的推廣連結，
+    會遮蔽真正的官方連結；但 irunner.biji.co/<活動slug> 這類個別活動頁要保留。
+    """
+    if any(d in href for d in _SKIP_DOMAINS):
+        return True
+    parsed = urlparse(href)
+    if parsed.netloc.endswith(".biji.co") and parsed.path.strip("/") == "":
+        return True
+    return False
+
+
 def _extract_reg_url(soup: BeautifulSoup) -> str | None:
-    """從活動詳情頁找出外部官方報名或簡章連結（報名連結優先）。"""
-    for keyword_set in (_REG_KEYWORDS, _BROCHURE_KEYWORDS):
+    """從活動詳情頁找出外部官方報名、官網或簡章連結（報名 > 官網 > 簡章）。"""
+    for keyword_set in (_REG_KEYWORDS, _OFFICIAL_KEYWORDS, _BROCHURE_KEYWORDS):
         for link in soup.find_all("a", href=True):
             if not isinstance(link, Tag):
                 continue
             href = str(link.get("href", ""))
             if not href.startswith("http"):
                 continue
-            if any(d in href for d in _SKIP_DOMAINS):
+            if _is_skipped_url(href):
                 continue
             if any(kw in link.get_text(strip=True) for kw in keyword_set):
                 return href

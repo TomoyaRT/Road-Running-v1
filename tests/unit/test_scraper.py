@@ -619,6 +619,31 @@ def test_extract_reg_url_still_skips_running_biji_co():
     assert result is None
 
 
+def test_extract_reg_url_skips_irunner_homepage_promo():
+    """biji 自家推廣的 irunner 裸首頁（含「報名」字樣）必須略過，不可遮蔽真正官方連結。"""
+    html = """
+    <html><body>
+      <a href="https://irunner.biji.co/">筆記報名</a>
+      <a href="https://www.focusline.com.tw/260621KF/personal">線上報名</a>
+    </body></html>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    result = _extract_reg_url(soup)
+    assert result == "https://www.focusline.com.tw/260621KF/personal"
+
+
+def test_extract_reg_url_matches_official_website_keyword():
+    """只有「官方網站／活動官方網站」、沒有報名連結的活動也要抽得到。"""
+    html = """
+    <html><body>
+      <a href="https://www.natgeomedia.com/event/2026/tw_wodrun2026">活動官方網站</a>
+    </body></html>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    result = _extract_reg_url(soup)
+    assert result == "https://www.natgeomedia.com/event/2026/tw_wodrun2026"
+
+
 # ── _do_fetch_biji_detail 改抓 official_url og:image（任務二）──────────────
 
 
