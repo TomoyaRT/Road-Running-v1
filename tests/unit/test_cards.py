@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -246,10 +246,7 @@ def test_build_nav_markup_always_has_reg_button():
 async def test_send_carousel_start_uses_send_photo_when_image_present():
     mock_bot = AsyncMock()
     events = [_EVENT_WITH_IMAGE]
-    with patch(
-        "src.bot.cards.fetch_official_url_async", new=AsyncMock(return_value=None)
-    ):
-        await send_carousel_start(mock_bot, 123, events, "o", "all")
+    await send_carousel_start(mock_bot, 123, events, "o", "all")
     mock_bot.send_photo.assert_called_once()
     call = mock_bot.send_photo.call_args
     assert call.kwargs["photo"] == "https://example.com/image.jpg"
@@ -262,10 +259,7 @@ async def test_send_carousel_start_uses_placeholder_when_no_image():
 
     mock_bot = AsyncMock()
     events = [_EVENT]  # no image_url
-    with patch(
-        "src.bot.cards.fetch_official_url_async", new=AsyncMock(return_value=None)
-    ):
-        await send_carousel_start(mock_bot, 123, events, "o", "all")
+    await send_carousel_start(mock_bot, 123, events, "o", "all")
     mock_bot.send_photo.assert_called_once()
     call = mock_bot.send_photo.call_args
     assert call.kwargs["photo"] == PLACEHOLDER_IMAGE_URL

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup
@@ -335,15 +335,33 @@ async def test_unsubscribe_btn_callback_shows_confirmation(
 
 _SAMPLE_EVENTS_NAV = [
     RaceEvent(
-        name=f"活動{i}",
-        race_date=date(2026, 11, i + 1),
+        name="活動0",
+        race_date=date(2026, 11, 1),
         location="台北市",
-        url=f"https://running.biji.co/index.php?q=competition&act=info&cid={i}",
+        url="https://running.biji.co/index.php?q=competition&act=info&cid=0",
         reg_start=date(2026, 6, 1),
         reg_end=date(2026, 8, 31),
         city="台北市",
-    )
-    for i in range(3)
+        official_url="https://official-reg.example.com",
+    ),
+    RaceEvent(
+        name="活動1",
+        race_date=date(2026, 11, 2),
+        location="台北市",
+        url="https://running.biji.co/index.php?q=competition&act=info&cid=1",
+        reg_start=date(2026, 6, 1),
+        reg_end=date(2026, 8, 31),
+        city="台北市",
+    ),
+    RaceEvent(
+        name="活動2",
+        race_date=date(2026, 11, 3),
+        location="台北市",
+        url="https://running.biji.co/index.php?q=competition&act=info&cid=2",
+        reg_start=date(2026, 6, 1),
+        reg_end=date(2026, 8, 31),
+        city="台北市",
+    ),
 ]
 
 
@@ -352,16 +370,14 @@ async def test_nav_callback_edits_message_for_open_events(
     mock_callback_update, mock_context
 ):
     mock_callback_update.callback_query.data = "nav:o:1:all"
+    mock_db = MagicMock()
+    mock_db.get_events.return_value = _SAMPLE_EVENTS_NAV
 
     with (
-        patch("src.bot.handlers.fetch_events", return_value=_SAMPLE_EVENTS_NAV),
+        patch("src.bot.handlers.get_db", return_value=mock_db),
         patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS_NAV),
         patch(
             "src.bot.handlers.filter_events_by_city", return_value=_SAMPLE_EVENTS_NAV
-        ),
-        patch(
-            "src.bot.handlers.fetch_official_url_async",
-            new=AsyncMock(return_value=None),
         ),
     ):
         await nav_callback(mock_callback_update, mock_context)
@@ -374,16 +390,14 @@ async def test_nav_callback_shows_correct_event_index(
     mock_callback_update, mock_context
 ):
     mock_callback_update.callback_query.data = "nav:o:1:all"
+    mock_db = MagicMock()
+    mock_db.get_events.return_value = _SAMPLE_EVENTS_NAV
 
     with (
-        patch("src.bot.handlers.fetch_events", return_value=_SAMPLE_EVENTS_NAV),
+        patch("src.bot.handlers.get_db", return_value=mock_db),
         patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS_NAV),
         patch(
             "src.bot.handlers.filter_events_by_city", return_value=_SAMPLE_EVENTS_NAV
-        ),
-        patch(
-            "src.bot.handlers.fetch_official_url_async",
-            new=AsyncMock(return_value=None),
         ),
     ):
         await nav_callback(mock_callback_update, mock_context)
@@ -399,17 +413,14 @@ async def test_nav_callback_uses_official_url_when_available(
     mock_callback_update, mock_context
 ):
     mock_callback_update.callback_query.data = "nav:o:0:all"
-    official = "https://official-reg.example.com"
+    mock_db = MagicMock()
+    mock_db.get_events.return_value = _SAMPLE_EVENTS_NAV
 
     with (
-        patch("src.bot.handlers.fetch_events", return_value=_SAMPLE_EVENTS_NAV),
+        patch("src.bot.handlers.get_db", return_value=mock_db),
         patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS_NAV),
         patch(
             "src.bot.handlers.filter_events_by_city", return_value=_SAMPLE_EVENTS_NAV
-        ),
-        patch(
-            "src.bot.handlers.fetch_official_url_async",
-            new=AsyncMock(return_value=official),
         ),
     ):
         await nav_callback(mock_callback_update, mock_context)
@@ -417,7 +428,7 @@ async def test_nav_callback_uses_official_url_when_available(
     call = mock_callback_update.callback_query.edit_message_media.call_args
     markup = call.kwargs.get("reply_markup")
     reg_buttons = [btn for row in markup.inline_keyboard for btn in row if btn.url]
-    assert reg_buttons[0].url == official
+    assert reg_buttons[0].url == "https://official-reg.example.com"
 
 
 # ── handle_text_message ────────────────────────────────────────────────────────

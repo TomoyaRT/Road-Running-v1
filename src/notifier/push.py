@@ -9,7 +9,6 @@ from src.bot.cards import send_carousel_start
 from src.bot.handlers import get_db
 from src.scraper.running_biji import (
     RaceEvent,
-    fetch_events,
     filter_events_by_city,
     filter_open_events,
 )
@@ -27,7 +26,7 @@ async def notify_users(bot: Bot, hour: int) -> None:
         logger.info(f"Hour {hour}: no subscribers, skip")
         return
 
-    events = fetch_events()
+    events = db.get_events()
     open_events = filter_open_events(events, date.today())
 
     if not open_events:

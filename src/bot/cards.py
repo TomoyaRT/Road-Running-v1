@@ -4,7 +4,7 @@ import logging
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
-from src.scraper.running_biji import RaceEvent, fetch_official_url_async
+from src.scraper.running_biji import RaceEvent
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ async def send_carousel_start(
         return
     event = events[0]
     total = len(events)
-    official_url = await fetch_official_url_async(event.url) or event.url
+    official_url = event.official_url or event.url
     text = format_carousel_text(event, 0, total)
     markup = build_nav_markup(event_type, 0, total, city, official_url)
     photo = event.image_url or PLACEHOLDER_IMAGE_URL

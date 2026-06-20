@@ -36,7 +36,6 @@ from src.bot.webapp_api import validate_init_data
 from src.notifier.push import notify_users
 from src.scraper.crawler import crawl_and_store
 from src.scraper.running_biji import (
-    fetch_events,
     filter_events_by_city,
     filter_open_events,
     filter_upcoming_events,
@@ -145,7 +144,7 @@ async def api_events() -> Response:
     event_type = request.args.get("type", "open")
     city = request.args.get("city", "all")
 
-    events = fetch_events()
+    events = get_db().get_events()
     today = date.today()
     filtered = (
         filter_upcoming_events(events, today)

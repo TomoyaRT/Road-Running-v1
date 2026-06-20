@@ -40,9 +40,9 @@ async def test_notify_users_sends_carousel_to_each_subscriber():
     mock_bot = AsyncMock()
     mock_db = MagicMock()
     mock_db.get_users_for_hour.return_value = _USERS_ALL
+    mock_db.get_events.return_value = _OPEN_EVENTS
 
     with (
-        patch("src.notifier.push.fetch_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.get_db", return_value=mock_db),
         patch(
@@ -63,9 +63,9 @@ async def test_notify_users_sends_footer_after_carousel():
     mock_db.get_users_for_hour.return_value = [
         {"user_id": 111, "preferred_city": "all"}
     ]
+    mock_db.get_events.return_value = _OPEN_EVENTS
 
     with (
-        patch("src.notifier.push.fetch_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.get_db", return_value=mock_db),
         patch("src.notifier.push.send_carousel_start", new_callable=AsyncMock),
@@ -88,9 +88,9 @@ async def test_notify_users_filters_events_by_city():
         {"user_id": 111, "preferred_city": "台北市"},
         {"user_id": 222, "preferred_city": "高雄市"},
     ]
+    mock_db.get_events.return_value = _OPEN_EVENTS
 
     with (
-        patch("src.notifier.push.fetch_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.get_db", return_value=mock_db),
         patch(
@@ -113,9 +113,9 @@ async def test_notify_users_skips_user_when_no_city_events():
     mock_db.get_users_for_hour.return_value = [
         {"user_id": 111, "preferred_city": "嘉義市"}
     ]
+    mock_db.get_events.return_value = _OPEN_EVENTS
 
     with (
-        patch("src.notifier.push.fetch_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.get_db", return_value=mock_db),
         patch(
@@ -132,9 +132,9 @@ async def test_notify_users_skips_when_no_open_events():
     mock_bot = AsyncMock()
     mock_db = MagicMock()
     mock_db.get_users_for_hour.return_value = _USERS_ALL
+    mock_db.get_events.return_value = []
 
     with (
-        patch("src.notifier.push.fetch_events", return_value=[]),
         patch("src.notifier.push.filter_open_events", return_value=[]),
         patch("src.notifier.push.get_db", return_value=mock_db),
         patch(
@@ -154,8 +154,6 @@ async def test_notify_users_skips_when_no_subscribers():
     mock_db.get_users_for_hour.return_value = []
 
     with (
-        patch("src.notifier.push.fetch_events", return_value=_OPEN_EVENTS),
-        patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.get_db", return_value=mock_db),
         patch(
             "src.notifier.push.send_carousel_start", new_callable=AsyncMock
@@ -173,8 +171,6 @@ async def test_notify_users_queries_correct_hour():
     mock_db.get_users_for_hour.return_value = []
 
     with (
-        patch("src.notifier.push.fetch_events", return_value=[]),
-        patch("src.notifier.push.filter_open_events", return_value=[]),
         patch("src.notifier.push.get_db", return_value=mock_db),
     ):
         await notify_users(bot=mock_bot, hour=20)

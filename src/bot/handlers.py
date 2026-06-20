@@ -22,8 +22,6 @@ from src.bot.cards import (
 )
 from src.db.firestore_client import FirestoreClient
 from src.scraper.running_biji import (
-    fetch_events,
-    fetch_official_url_async,
     filter_events_by_city,
     filter_open_events,
     filter_upcoming_events,
@@ -282,7 +280,7 @@ async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     index = int(parts[2])
     city = parts[3]
 
-    events = fetch_events()
+    events = get_db().get_events()
     today = date.today()
     if event_type == "o":
         filtered = filter_open_events(events, today)
@@ -296,7 +294,7 @@ async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     event = city_events[index]
-    official_url = await fetch_official_url_async(event.url) or event.url
+    official_url = event.official_url or event.url
     text = format_carousel_text(event, index, total)
     markup = build_nav_markup(event_type, index, total, city, official_url)
     photo = event.image_url or PLACEHOLDER_IMAGE_URL
