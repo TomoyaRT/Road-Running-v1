@@ -140,6 +140,11 @@ async def webapp_page() -> Response:
     return await send_from_directory(_STATIC_DIR, "index.html")
 
 
+@quart_app.route("/static/<path:filename>")
+async def static_file(filename: str) -> Response:
+    return await send_from_directory(_STATIC_DIR, filename)
+
+
 @quart_app.route("/api/events")
 async def api_events() -> Response:
     init_data = request.headers.get("Authorization", "")
@@ -169,6 +174,7 @@ async def api_events() -> Response:
             "reg_end": e.reg_end.isoformat() if e.reg_end else None,
             "city": e.city,
             "image_url": e.image_url,
+            "organizer": e.organizer,
             "categories": e.categories,
         }
         for e in city_events

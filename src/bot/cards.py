@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -8,7 +9,11 @@ from src.scraper.running_biji import RaceEvent
 
 logger = logging.getLogger(__name__)
 
-PLACEHOLDER_IMAGE_URL = "https://placehold.co/600x300/eeeeee/999999.png"
+PLACEHOLDER_IMAGE_URL = (
+    f"{os.environ['GCP_CLOUD_RUN_URL'].rstrip('/')}/static/default-bg.jpg"
+    if os.environ.get("GCP_CLOUD_RUN_URL")
+    else "https://placehold.co/600x300/eeeeee/999999.png"
+)
 
 
 def format_card_text(event: RaceEvent) -> str:
@@ -22,6 +27,8 @@ def format_card_text(event: RaceEvent) -> str:
         f"報名時間：{reg_start} - {reg_end}",
         f"活動地點：{event.location}",
     ]
+    if event.organizer:
+        lines.append(f"主辦單位：{event.organizer}")
     if event.categories:
         lines.append(f"報名組別：{' / '.join(event.categories)}")
     return "\n".join(lines)
@@ -37,6 +44,10 @@ def format_carousel_text(event: RaceEvent, index: int, total: int) -> str:
     lines += [
         f"活動日期：{event.race_date.strftime('%Y-%m-%d')}",
         f"活動地點：{event.location}",
+    ]
+    if event.organizer:
+        lines.append(f"主辦單位：{event.organizer}")
+    lines += [
         "",
         f"報名時間：{reg_start} - {reg_end}",
     ]

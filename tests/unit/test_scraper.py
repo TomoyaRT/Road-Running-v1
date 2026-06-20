@@ -4,9 +4,12 @@ from datetime import date
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from bs4 import BeautifulSoup
 
 from src.scraper.running_biji import (
     RaceEvent,
+    _extract_categories,
+    _extract_organizer,
     _parse_reg_dates,
     enrich_event,
     enrich_events,
@@ -298,55 +301,138 @@ def test_extract_og_image_returns_none_when_absent():
     assert extract_og_image(html) is None
 
 
+# ── _extract_organizer ────────────────────────────────────────────────────────
+
+
+def test_extract_organizer_from_table_row():
+    html = "<table><tr><td>主辦單位</td><td>台灣路跑協會</td></tr></table>"
+    soup = BeautifulSoup(html, "html.parser")
+    assert _extract_organizer(soup) == "台灣路跑協會"
+
+
+def test_extract_organizer_from_th_label():
+    html = "<table><tr><th>主辦</th><td>新北市政府體育局</td></tr></table>"
+    soup = BeautifulSoup(html, "html.parser")
+    assert _extract_organizer(soup) == "新北市政府體育局"
+
+
+def test_extract_organizer_returns_none_when_absent():
+    html = "<html><body><p>沒有主辦單位資訊</p></body></html>"
+    soup = BeautifulSoup(html, "html.parser")
+    assert _extract_organizer(soup) is None
+
+
+# ── _extract_categories ───────────────────────────────────────────────────────
+
+
+def test_extract_categories_from_table_with_slash_separator():
+    html = "<table><tr><td>比賽組別</td><td>全程馬拉松 / 半程馬拉松 / 10K</td></tr></table>"
+    soup = BeautifulSoup(html, "html.parser")
+    result = _extract_categories(soup)
+    assert "全程馬拉松" in result
+    assert "半程馬拉松" in result
+    assert "10K" in result
+
+
+def test_extract_categories_from_table_with_newline_separator():
+    html = "<table><tr><td>組別</td><td>挑戰組 3K\n熱跑組 6.5K</td></tr></table>"
+    soup = BeautifulSoup(html, "html.parser")
+    result = _extract_categories(soup)
+    assert len(result) == 2
+    assert "挑戰組 3K" in result
+    assert "熱跑組 6.5K" in result
+
+
+def test_extract_categories_returns_empty_when_absent():
+    html = "<html><body><p>沒有組別資訊</p></body></html>"
+    soup = BeautifulSoup(html, "html.parser")
+    assert _extract_categories(soup) == []
+
+
 # ── enrich_events ─────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_enrich_event_populates_reg_url_and_image():
+async def test_enrich_event_sets_official_url_image_organizer_categories():
+    from src.scraper.running_biji import _BijiEventDetail
+
     event = _ev("台北馬拉松")
-    with (
-        patch(
-            "src.scraper.running_biji.fetch_official_url_async",
-            new=AsyncMock(return_value="https://ctrun.com.tw/Activity?EventMain_ID=1"),
-        ),
-        patch(
-            "src.scraper.running_biji.fetch_og_image",
-            return_value="https://ctrun.com.tw/banner.jpg",
-        ),
+    detail = _BijiEventDetail(
+        official_url="https://ctrun.com.tw/Activity?EventMain_ID=1",
+        image_url="https://running.biji.co/event-banner.jpg",
+        organizer="台灣路跑協會",
+        categories=["全程馬拉松 42K", "半程馬拉松 21K"],
+    )
+    with patch(
+        "src.scraper.running_biji._fetch_biji_detail_async",
+        new=AsyncMock(return_value=detail),
     ):
         result = await enrich_event(event)
 
     assert result.official_url == "https://ctrun.com.tw/Activity?EventMain_ID=1"
-    assert result.image_url == "https://ctrun.com.tw/banner.jpg"
+    assert result.image_url == "https://running.biji.co/event-banner.jpg"
+    assert result.organizer == "台灣路跑協會"
+    assert result.categories == ["全程馬拉松 42K", "半程馬拉松 21K"]
 
 
 @pytest.mark.asyncio
-async def test_enrich_event_no_image_when_no_reg_url():
+async def test_enrich_event_gets_image_even_without_official_url():
+    from src.scraper.running_biji import _BijiEventDetail
+
     event = _ev("台北馬拉松")
+    detail = _BijiEventDetail(
+        official_url=None,
+        image_url="https://running.biji.co/event.jpg",
+        organizer=None,
+        categories=[],
+    )
     with patch(
-        "src.scraper.running_biji.fetch_official_url_async",
-        new=AsyncMock(return_value=None),
+        "src.scraper.running_biji._fetch_biji_detail_async",
+        new=AsyncMock(return_value=detail),
     ):
         result = await enrich_event(event)
 
     assert result.official_url is None
-    assert result.image_url is None
+    assert result.image_url == "https://running.biji.co/event.jpg"
+
+
+@pytest.mark.asyncio
+async def test_enrich_event_keeps_thumbnail_when_biji_has_no_image():
+    from src.scraper.running_biji import _BijiEventDetail
+
+    event = _ev("台北馬拉松")
+    event.image_url = "https://running.biji.co/thumbnail.jpg"
+    detail = _BijiEventDetail(
+        official_url=None,
+        image_url=None,
+        organizer=None,
+        categories=[],
+    )
+    with patch(
+        "src.scraper.running_biji._fetch_biji_detail_async",
+        new=AsyncMock(return_value=detail),
+    ):
+        result = await enrich_event(event)
+
+    assert result.image_url == "https://running.biji.co/thumbnail.jpg"
 
 
 @pytest.mark.asyncio
 async def test_enrich_events_processes_all():
+    from src.scraper.running_biji import _BijiEventDetail
+
     events = [_ev("活動A"), _ev("活動B")]
-    with (
-        patch(
-            "src.scraper.running_biji.fetch_official_url_async",
-            new=AsyncMock(return_value="https://reg.example.com/1"),
-        ),
-        patch(
-            "src.scraper.running_biji.fetch_og_image",
-            return_value="https://reg.example.com/img.jpg",
-        ),
+    detail = _BijiEventDetail(
+        official_url="https://reg.example.com/1",
+        image_url="https://biji.co/img.jpg",
+        organizer=None,
+        categories=[],
+    )
+    with patch(
+        "src.scraper.running_biji._fetch_biji_detail_async",
+        new=AsyncMock(return_value=detail),
     ):
         result = await enrich_events(events)
 
     assert len(result) == 2
-    assert all(e.image_url == "https://reg.example.com/img.jpg" for e in result)
+    assert all(e.image_url == "https://biji.co/img.jpg" for e in result)

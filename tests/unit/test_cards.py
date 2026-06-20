@@ -34,6 +34,17 @@ _EVENT_WITH_IMAGE = RaceEvent(
     categories=["42K全程組", "21K半程組"],
 )
 
+_EVENT_WITH_ORGANIZER = RaceEvent(
+    name="花蓮超馬",
+    race_date=date(2026, 10, 10),
+    location="花蓮縣",
+    url="https://running.biji.co/index.php?q=competition&act=info&cid=33333",
+    reg_start=date(2026, 7, 1),
+    reg_end=date(2026, 9, 30),
+    organizer="台灣超馬協會",
+    categories=["50K", "100K"],
+)
+
 # ── format_card_text ──────────────────────────────────────────────────────────
 
 
@@ -67,6 +78,16 @@ def test_format_card_text_contains_categories_when_present():
 def test_format_card_text_omits_categories_when_empty():
     text = format_card_text(_EVENT)
     assert "報名組別" not in text
+
+
+def test_format_card_text_shows_organizer_when_present():
+    text = format_card_text(_EVENT_WITH_ORGANIZER)
+    assert "台灣超馬協會" in text
+
+
+def test_format_card_text_omits_organizer_label_when_none():
+    text = format_card_text(_EVENT)
+    assert "主辦" not in text
 
 
 def test_format_card_text_uses_html_bold_for_name():
@@ -172,6 +193,16 @@ def test_format_carousel_text_shows_index_and_total():
 def test_format_carousel_text_includes_categories_when_present():
     text = format_carousel_text(_EVENT_WITH_IMAGE, index=0, total=1)
     assert "42K全程組" in text
+
+
+def test_format_carousel_text_shows_organizer_when_present():
+    text = format_carousel_text(_EVENT_WITH_ORGANIZER, index=0, total=1)
+    assert "台灣超馬協會" in text
+
+
+def test_format_carousel_text_omits_organizer_label_when_none():
+    text = format_carousel_text(_EVENT, index=0, total=1)
+    assert "主辦" not in text
 
 
 # ── build_nav_markup ──────────────────────────────────────────────────────────

@@ -59,9 +59,8 @@ _SKIP_DOMAINS = {
     "edh.tw",
 }
 _REG_KEYWORDS = {"報名", "線上報名", "立刻報名", "我要報名", "Register"}
-
-_official_url_cache: dict[str, str | None] = {}
-_og_image_cache: dict[str, str | None] = {}
+_BROCHURE_KEYWORDS = {"活動簡章", "簡章", "賽事簡章"}
+_CATEGORY_KEYWORDS = {"組別", "比賽組別", "比賽項目", "路跑組別"}
 
 # 專用 thread pool，避免 1-CPU Cloud Run 上 asyncio 預設 pool 只有 ~5 條而拖慢爬蟲
 _ENRICH_EXECUTOR = ThreadPoolExecutor(max_workers=16)
@@ -96,7 +95,19 @@ class RaceEvent:
     city: str = ""
     image_url: str | None = None
     official_url: str | None = None
+    organizer: str | None = None
     categories: list[str] = field(default_factory=list)
+
+
+@dataclass
+class _BijiEventDetail:
+    official_url: str | None
+    image_url: str | None
+    organizer: str | None
+    categories: list[str]
+
+
+_biji_detail_cache: dict[str, _BijiEventDetail] = {}
 
 
 def extract_city(location: str) -> str:
@@ -122,7 +133,7 @@ def parse_events_html(html: str) -> list[RaceEvent]:
     for row in rows:
         if not isinstance(row, Tag):
             continue
-        if "list-title" in row.get("class", []):
+        if "list-title" in (row.get("class") or []):
             continue
         event = _parse_row(row)
         if event is not None:
@@ -188,7 +199,7 @@ def _extract_location(row: Tag) -> str:
 
 
 def _fallback_race_date(row: Tag) -> date:
-    year = int(row.get("data-year", "2026"))
+    year = int(str(row.get("data-year") or "2026"))
     date_title = row.find("div", class_="competition-date-title")
     date_str = (
         date_title.get_text(strip=True)[:5] if isinstance(date_title, Tag) else ""
@@ -272,29 +283,9 @@ def extract_og_image(html: str) -> str | None:
     return None
 
 
-def fetch_official_url(event_url: str) -> str | None:
-    """爬取官方報名連結（成功結果帶 in-memory cache；失敗不快取以便下次重試）。"""
-    if event_url in _official_url_cache:
-        return _official_url_cache[event_url]
-    result = _do_fetch_official_url(event_url)
-    if result is not None:
-        _official_url_cache[event_url] = result
-    return result
-
-
-async def fetch_official_url_async(event_url: str) -> str | None:
-    """非阻塞版本，在 thread pool 執行以支援高並行抓取。"""
-    return await _run_in_pool(fetch_official_url, event_url)
-
-
-def _do_fetch_official_url(event_url: str) -> str | None:
-    """從活動詳情頁找出外部官方報名連結。"""
-    try:
-        resp = requests.get(
-            event_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}
-        )
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+def _extract_reg_url(soup: BeautifulSoup) -> str | None:
+    """從活動詳情頁找出外部官方報名或簡章連結（報名連結優先）。"""
+    for keyword_set in (_REG_KEYWORDS, _BROCHURE_KEYWORDS):
         for link in soup.find_all("a", href=True):
             if not isinstance(link, Tag):
                 continue
@@ -303,47 +294,90 @@ def _do_fetch_official_url(event_url: str) -> str | None:
                 continue
             if any(d in href for d in _SKIP_DOMAINS):
                 continue
-            text = link.get_text(strip=True)
-            if any(kw in text for kw in _REG_KEYWORDS):
+            if any(kw in link.get_text(strip=True) for kw in keyword_set):
                 return href
-        return None
-    except Exception:
-        logger.warning(f"fetch_official_url failed for {event_url}")
-        return None
+    return None
 
 
-def fetch_og_image(page_url: str) -> str | None:
-    """抓取頁面的 og:image（成功結果帶 in-memory cache；失敗不快取以便下次重試）。"""
-    if page_url in _og_image_cache:
-        return _og_image_cache[page_url]
-    result = _do_fetch_og_image(page_url)
-    if result is not None:
-        _og_image_cache[page_url] = result
+_ORGANIZER_LABELS = {"主辦單位", "主辦"}
+
+
+def _extract_organizer(soup: BeautifulSoup) -> str | None:
+    """從活動詳情頁 HTML 提取主辦單位。"""
+    for cell in soup.find_all(["td", "th", "dt", "span"]):
+        if cell.get_text(strip=True) in _ORGANIZER_LABELS:
+            nxt = cell.find_next_sibling()
+            if nxt:
+                text = nxt.get_text(strip=True)
+                if text and len(text) < 100:
+                    return text
+    return None
+
+
+def _extract_categories(soup: BeautifulSoup) -> list[str]:
+    """從活動詳情頁 HTML 提取路跑組別。"""
+    for cell in soup.find_all(["td", "th"]):
+        if any(kw in cell.get_text(strip=True) for kw in _CATEGORY_KEYWORDS):
+            nxt = cell.find_next_sibling(["td", "th"])
+            if nxt:
+                raw = nxt.get_text(separator="\n", strip=True)
+                cats = [
+                    c.strip()
+                    for c in re.split(r"[、/\n\r|]", raw)
+                    if c.strip() and len(c.strip()) < 30
+                ]
+                if cats:
+                    return cats
+    return []
+
+
+def _fetch_biji_detail_sync(event_url: str) -> _BijiEventDetail:
+    if event_url in _biji_detail_cache:
+        return _biji_detail_cache[event_url]
+    result = _do_fetch_biji_detail(event_url)
+    _biji_detail_cache[event_url] = result
     return result
 
 
-def _do_fetch_og_image(page_url: str) -> str | None:
+async def _fetch_biji_detail_async(event_url: str) -> _BijiEventDetail:
+    return await _run_in_pool(_fetch_biji_detail_sync, event_url)
+
+
+def _do_fetch_biji_detail(event_url: str) -> _BijiEventDetail:
+    """從 biji 活動詳情頁一次取得：og:image、官方報名連結、主辦單位、組別。"""
     try:
-        resp = requests.get(page_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        resp = requests.get(
+            event_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}
+        )
         resp.raise_for_status()
-        return extract_og_image(resp.text)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        return _BijiEventDetail(
+            official_url=_extract_reg_url(soup),
+            image_url=extract_og_image(resp.text),
+            organizer=_extract_organizer(soup),
+            categories=_extract_categories(soup),
+        )
     except Exception:
-        logger.warning(f"fetch_og_image failed for {page_url}")
-        return None
+        logger.warning(f"fetch_biji_detail failed for {event_url}")
+        return _BijiEventDetail(
+            official_url=None, image_url=None, organizer=None, categories=[]
+        )
 
 
 async def enrich_event(event: RaceEvent) -> RaceEvent:
-    """補齊單一活動的報名連結與封面圖（就地更新 event）。"""
-    reg_url = await fetch_official_url_async(event.url)
-    event.official_url = reg_url
-    if reg_url:
-        image = await _run_in_pool(fetch_og_image, reg_url)
-        if image:
-            event.image_url = image
+    """從 biji 活動詳情頁補齊報名連結、封面圖、主辦單位、組別（就地更新 event）。"""
+    detail = await _fetch_biji_detail_async(event.url)
+    event.official_url = detail.official_url
+    if detail.image_url:
+        event.image_url = detail.image_url
+    if detail.organizer:
+        event.organizer = detail.organizer
+    if detail.categories:
+        event.categories = detail.categories
     return event
 
 
 async def enrich_events(events: list[RaceEvent]) -> list[RaceEvent]:
-    """並行補齊所有活動的報名連結與封面圖。"""
+    """並行補齊所有活動的報名連結、封面圖、主辦單位、組別。"""
     await asyncio.gather(*(enrich_event(e) for e in events))
     return events
