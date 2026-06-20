@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import TypeVar
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup, Tag
@@ -48,7 +49,7 @@ _TW_CITIES = [
 ]
 
 _SKIP_DOMAINS = {
-    "biji.co",
+    "running.biji.co",
     "google.com",
     "google.com.tw",
     "facebook.com",
@@ -277,19 +278,34 @@ def filter_running_events(events: list[RaceEvent]) -> list[RaceEvent]:
     return [e for e in events if not any(kw in e.name for kw in _NON_RUNNING_KEYWORDS)]
 
 
-def extract_og_image(html: str) -> str | None:
-    """從 HTML 取出 og:image（找不到時退回 twitter:image）。"""
+_BIJI_DEFAULT_IMAGE_FRAGMENT = "competition_470x246.jpg"
+
+
+def extract_og_image(html: str, base_url: str = "") -> str | None:
+    """從 HTML 取出活動封面圖（og:image property > og:image name > twitter:image）。
+    排除 biji 預設圖與 favicon；相對路徑需提供 base_url 才能補全。
+    """
     soup = BeautifulSoup(html, "html.parser")
-    og = soup.find("meta", property="og:image")
-    if isinstance(og, Tag):
-        content = og.get("content")
-        if content:
-            return str(content)
-    tw = soup.find("meta", attrs={"name": "twitter:image"})
-    if isinstance(tw, Tag):
-        content = tw.get("content")
-        if content:
-            return str(content)
+    candidates: list[str] = []
+    for meta in (
+        soup.find("meta", property="og:image"),
+        soup.find("meta", attrs={"name": "og:image"}),
+        soup.find("meta", attrs={"name": "twitter:image"}),
+    ):
+        if isinstance(meta, Tag):
+            content = meta.get("content")
+            if content:
+                candidates.append(str(content))
+    for raw in candidates:
+        if raw.endswith(".ico") or "favicon" in raw:
+            continue
+        if _BIJI_DEFAULT_IMAGE_FRAGMENT in raw:
+            continue
+        if not raw.startswith("http"):
+            if base_url:
+                return urljoin(base_url, raw)
+            continue
+        return raw
     return None
 
 
@@ -354,16 +370,29 @@ async def _fetch_biji_detail_async(event_url: str) -> _BijiEventDetail:
 
 
 def _do_fetch_biji_detail(event_url: str) -> _BijiEventDetail:
-    """從 biji 活動詳情頁一次取得：og:image、官方報名連結、主辦單位、組別。"""
+    """從 biji 活動詳情頁取得：官方報名連結、主辦單位、組別；再從報名站抓 og:image。"""
     try:
         resp = requests.get(
             event_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}
         )
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
+        official_url = _extract_reg_url(soup)
+
+        image_url: str | None = None
+        if official_url:
+            try:
+                reg_resp = requests.get(
+                    official_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}
+                )
+                reg_resp.raise_for_status()
+                image_url = extract_og_image(reg_resp.text, base_url=official_url)
+            except Exception:
+                logger.warning(f"fetch og:image from {official_url} failed")
+
         return _BijiEventDetail(
-            official_url=_extract_reg_url(soup),
-            image_url=extract_og_image(resp.text),
+            official_url=official_url,
+            image_url=image_url,
             organizer=_extract_organizer(soup),
             categories=_extract_categories(soup),
         )
@@ -378,8 +407,7 @@ async def enrich_event(event: RaceEvent) -> RaceEvent:
     """從 biji 活動詳情頁補齊報名連結、封面圖、主辦單位、組別（就地更新 event）。"""
     detail = await _fetch_biji_detail_async(event.url)
     event.official_url = detail.official_url
-    if detail.image_url:
-        event.image_url = detail.image_url
+    event.image_url = detail.image_url
     if detail.organizer:
         event.organizer = detail.organizer
     if detail.categories:

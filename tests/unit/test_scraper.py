@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from bs4 import BeautifulSoup
@@ -9,8 +9,10 @@ from bs4 import BeautifulSoup
 from src.scraper.running_biji import (
     RaceEvent,
     _BijiEventDetail,
+    _do_fetch_biji_detail,
     _extract_categories,
     _extract_organizer,
+    _extract_reg_url,
     _normalize_city,
     _parse_reg_dates,
     enrich_event,
@@ -468,8 +470,8 @@ async def test_enrich_event_gets_image_even_without_official_url():
 
 
 @pytest.mark.asyncio
-async def test_enrich_event_keeps_thumbnail_when_biji_has_no_image():
-
+async def test_enrich_event_clears_image_when_detail_has_no_image():
+    """當 detail.image_url 為 None，event.image_url 應被設為 None（不保留列表縮圖）。"""
     event = _ev("台北馬拉松")
     event.image_url = "https://running.biji.co/thumbnail.jpg"
     detail = _BijiEventDetail(
@@ -484,7 +486,7 @@ async def test_enrich_event_keeps_thumbnail_when_biji_has_no_image():
     ):
         result = await enrich_event(event)
 
-    assert result.image_url == "https://running.biji.co/thumbnail.jpg"
+    assert result.image_url is None
 
 
 @pytest.mark.asyncio
@@ -519,3 +521,104 @@ def test_clear_enrich_cache_empties_cache():
     )
     clear_enrich_cache()
     assert "https://example.com/ev1" not in _biji_detail_cache
+
+
+# ── extract_og_image 強化（任務二）────────────────────────────────────────────
+
+
+def test_extract_og_image_accepts_meta_name_og_image():
+    html = '<html><head><meta name="og:image" content="https://focusline.com/img.jpg"></head></html>'
+    assert extract_og_image(html) == "https://focusline.com/img.jpg"
+
+
+def test_extract_og_image_rejects_ico():
+    html = '<html><head><meta property="og:image" content="https://site.com/favicon76.ico"></head></html>'
+    assert extract_og_image(html) is None
+
+
+def test_extract_og_image_rejects_biji_default_image():
+    html = (
+        '<html><head><meta property="og:image" content="'
+        "https://running.biji.co/static/default_jpg/competition_470x246.jpg"
+        '"></head></html>'
+    )
+    assert extract_og_image(html) is None
+
+
+def test_extract_og_image_resolves_relative_url():
+    html = '<html><head><meta property="og:image" content="/images/event.jpg"></head></html>'
+    result = extract_og_image(html, base_url="https://lohasnet.tw/event/123")
+    assert result == "https://lohasnet.tw/images/event.jpg"
+
+
+def test_extract_og_image_returns_none_for_relative_without_base_url():
+    html = '<html><head><meta property="og:image" content="/images/event.jpg"></head></html>'
+    assert extract_og_image(html) is None
+
+
+# ── _extract_reg_url 放行 irunner.biji.co（任務二）──────────────────────────
+
+
+def test_extract_reg_url_allows_irunner_biji_co():
+    html = """
+    <html><body>
+      <a href="https://irunner.biji.co/2026SpongeBob-KHH">線上報名</a>
+    </body></html>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    result = _extract_reg_url(soup)
+    assert result == "https://irunner.biji.co/2026SpongeBob-KHH"
+
+
+def test_extract_reg_url_still_skips_running_biji_co():
+    html = """
+    <html><body>
+      <a href="https://running.biji.co/event/123">線上報名</a>
+    </body></html>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    result = _extract_reg_url(soup)
+    assert result is None
+
+
+# ── _do_fetch_biji_detail 改抓 official_url og:image（任務二）──────────────
+
+
+def test_do_fetch_biji_detail_fetches_og_image_from_official_url():
+    biji_html = (
+        "<html><body>"
+        '<a href="https://ctrun.com.tw/activity/123">線上報名</a>'
+        "</body></html>"
+    )
+    official_html = (
+        '<html><head><meta property="og:image" content="https://ctrun.com.tw/banner.jpg">'
+        "</head></html>"
+    )
+
+    def mock_get(url, **kwargs):
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.text = official_html if "ctrun" in url else biji_html
+        return resp
+
+    with patch("src.scraper.running_biji.requests.get", side_effect=mock_get):
+        result = _do_fetch_biji_detail("https://running.biji.co/event/1")
+
+    assert result.official_url == "https://ctrun.com.tw/activity/123"
+    assert result.image_url == "https://ctrun.com.tw/banner.jpg"
+
+
+def test_do_fetch_biji_detail_returns_none_image_when_no_official_url():
+    biji_html = "<html><body><p>沒有報名連結</p></body></html>"
+
+    def mock_get(url, **kwargs):
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.text = biji_html
+        return resp
+
+    with patch("src.scraper.running_biji.requests.get", side_effect=mock_get):
+        result = _do_fetch_biji_detail("https://running.biji.co/event/1")
+
+    assert result.official_url is None
+    assert result.image_url is None
