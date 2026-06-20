@@ -120,8 +120,12 @@ async def notify_endpoint() -> Response:
     assert _telegram_app is not None
     tw_hour = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).hour
     bot: Bot = _telegram_app.bot
-    await notify_users(bot=bot, hour=tw_hour)
-    return Response("ok", status=200)
+    try:
+        await notify_users(bot=bot, hour=tw_hour)
+        return Response("ok", status=200)
+    except Exception:
+        logger.exception("notify failed")
+        return Response("notify failed", status=500)
 
 
 @quart_app.route("/crawl", methods=["POST"])
