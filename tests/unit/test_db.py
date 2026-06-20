@@ -38,6 +38,24 @@ def test_subscribe_saves_user_with_hour_and_city(db, mock_firestore):
     )
 
 
+def test_subscribe_returns_true_for_new_subscriber(db, mock_firestore):
+    doc_ref = mock_firestore.collection.return_value.document.return_value
+    doc_ref.get.return_value.exists = False
+
+    result = db.subscribe(user_id=123, notification_hour=8)
+
+    assert result is True
+
+
+def test_subscribe_returns_false_for_existing_subscriber(db, mock_firestore):
+    doc_ref = mock_firestore.collection.return_value.document.return_value
+    doc_ref.get.return_value.exists = True
+
+    result = db.subscribe(user_id=123, notification_hour=8)
+
+    assert result is False
+
+
 def test_subscribe_defaults_preferred_city_to_all(db, mock_firestore):
     db.subscribe(user_id=123, notification_hour=8)
 

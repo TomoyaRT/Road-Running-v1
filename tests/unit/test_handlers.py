@@ -185,9 +185,12 @@ async def test_city_callback_saves_all_city(mock_callback_update, mock_context):
 
 
 @pytest.mark.asyncio
-async def test_city_callback_shows_confirmation(mock_callback_update, mock_context):
+async def test_city_callback_shows_confirmation_for_returning_subscriber(
+    mock_callback_update, mock_context
+):
     mock_callback_update.callback_query.data = "city:9:台北市"
     mock_db = MagicMock()
+    mock_db.subscribe.return_value = False  # 舊訂閱者
 
     with patch("src.bot.handlers.get_db", return_value=mock_db):
         await city_callback(mock_callback_update, mock_context)
@@ -196,6 +199,24 @@ async def test_city_callback_shows_confirmation(mock_callback_update, mock_conte
     assert "09:00" in text
     assert "台北市" in text
     assert "設定完成" in text
+    assert "感謝" not in text
+
+
+@pytest.mark.asyncio
+async def test_city_callback_shows_thank_you_for_new_subscriber(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "city:9:台北市"
+    mock_db = MagicMock()
+    mock_db.subscribe.return_value = True  # 首次訂閱
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await city_callback(mock_callback_update, mock_context)
+
+    text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
+    assert "09:00" in text
+    assert "台北市" in text
+    assert "感謝" in text
 
 
 # ── open_settings_callback ─────────────────────────────────────────────────────

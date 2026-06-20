@@ -56,9 +56,11 @@ class FirestoreClient:
 
     def subscribe(
         self, user_id: int, notification_hour: int, preferred_city: str = "all"
-    ) -> None:
-        """新增或更新使用者的通知訂閱（含推播時段與城市偏好）。"""
-        self._db.collection(_COLLECTION).document(str(user_id)).set(
+    ) -> bool:
+        """新增或更新使用者的通知訂閱（含推播時段與城市偏好）。回傳 True 表示首次訂閱。"""
+        doc_ref = self._db.collection(_COLLECTION).document(str(user_id))
+        is_new = not doc_ref.get().exists
+        doc_ref.set(
             {
                 "user_id": user_id,
                 "notification_hour": notification_hour,
@@ -69,6 +71,7 @@ class FirestoreClient:
         logger.info(
             f"User {user_id} subscribed at hour {notification_hour}, city={preferred_city}"
         )
+        return is_new
 
     def update_city(self, user_id: int, preferred_city: str) -> None:
         """只更新城市偏好，不動推播時段。"""

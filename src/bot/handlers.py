@@ -226,14 +226,20 @@ async def city_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     city = parts[2]
 
     db = get_db()
-    db.subscribe(
+    is_new = db.subscribe(
         user_id=update.effective_user.id, notification_hour=hour, preferred_city=city
     )
 
     city_label = _city_display(city)
-    await query.edit_message_text(
-        f"設定完成！每天 {hour:02d}:00 推播 {city_label} 可報名路跑活動給你。"
-    )
+    if is_new:
+        msg = (
+            f"🎉 設定完成囉！感謝你加入台灣路跑通知 🏃\n\n"
+            f"從今天起，我會在每天 {hour:02d}:00 把 {city_label} 最新可報名的路跑活動送到你眼前，讓你不錯過任何賽事。\n\n"
+            f"祝你跑得開心、賽事連連 💪"
+        )
+    else:
+        msg = f"設定完成！每天 {hour:02d}:00 推播 {city_label} 可報名路跑活動給你。"
+    await query.edit_message_text(msg)
 
 
 async def open_settings_callback(
