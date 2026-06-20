@@ -4,7 +4,6 @@ import datetime
 import json
 import logging
 import os
-from datetime import date
 
 from quart import Quart, Response, request, send_from_directory
 from telegram import Bot, Update
@@ -42,6 +41,7 @@ from src.scraper.running_biji import (
     filter_open_events,
     filter_upcoming_events,
 )
+from src.utils import tw_today
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -151,7 +151,7 @@ async def api_events() -> Response:
     city = request.args.get("city", "all")
 
     events = get_db().get_events()
-    today = date.today()
+    today = tw_today()
     filtered = (
         filter_upcoming_events(events, today)
         if event_type == "upcoming"

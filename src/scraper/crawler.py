@@ -12,6 +12,7 @@ from src.scraper.running_biji import (
     filter_running_events,
     filter_upcoming_events,
 )
+from src.utils import tw_today
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ async def crawl_and_store(db: _EventStore, today: date | None = None) -> int:
     只保留目前可報名或 30 天內即將開放的活動（已截止的不存）。
     回傳實際儲存的活動數量。
     """
-    today = today or date.today()
+    today = today or tw_today()
     raw = fetch_events()
     if not raw:
         # 爬蟲回傳空清單通常代表來源網站改版或暫時失效，

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date
 
 from telegram import (
     InlineKeyboardButton,
@@ -26,6 +25,7 @@ from src.scraper.running_biji import (
     filter_open_events,
     filter_upcoming_events,
 )
+from src.utils import tw_today
 
 logger = logging.getLogger(__name__)
 
@@ -353,7 +353,7 @@ async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     city = parts[3]
 
     events = get_db().get_events()
-    today = date.today()
+    today = tw_today()
     if event_type == "o":
         filtered = filter_open_events(events, today)
     else:

@@ -8,6 +8,29 @@ import pytest
 from src.notifier.push import notify_users
 from src.scraper.running_biji import RaceEvent
 
+# ── tw_today 整合驗證 ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_notify_users_uses_tw_today_for_date_filtering():
+    """notify_users 必須用 tw_today() 而非 date.today() 來過濾活動。"""
+    mock_bot = AsyncMock()
+    mock_db = MagicMock()
+    mock_db.get_users_for_hour.return_value = [
+        {"user_id": 111, "preferred_city": "all"}
+    ]
+    mock_db.get_events.return_value = []
+
+    with (
+        patch("src.notifier.push.get_db", return_value=mock_db),
+        patch("src.notifier.push.filter_open_events", return_value=[]),
+        patch("src.notifier.push.tw_today") as mock_tw_today,
+    ):
+        await notify_users(bot=mock_bot, hour=8)
+
+    mock_tw_today.assert_called_once()
+
+
 _OPEN_EVENTS = [
     RaceEvent(
         name="台北馬拉松",

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -12,6 +11,7 @@ from src.scraper.running_biji import (
     filter_events_by_city,
     filter_open_events,
 )
+from src.utils import tw_today
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ async def notify_users(bot: Bot, hour: int) -> None:
         return
 
     events = db.get_events()
-    open_events = filter_open_events(events, date.today())
+    open_events = filter_open_events(events, tw_today())
 
     if not open_events:
         logger.info(f"Hour {hour}: no open events, skip")

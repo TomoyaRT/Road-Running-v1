@@ -12,6 +12,8 @@ from typing import TypeVar
 import requests
 from bs4 import BeautifulSoup, Tag
 
+from src.utils import tw_today
+
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
@@ -194,7 +196,7 @@ def _fallback_race_date(row: Tag) -> date:
     try:
         return date.fromisoformat(f"{year}-{date_str}")
     except ValueError:
-        return date.today()
+        return tw_today()
 
 
 def _parse_race_date(cal_href: str) -> date | None:
