@@ -44,17 +44,16 @@ _SLOT_LABELS: dict[str, str] = {
     "s4": "20:00 - 23:00",
 }
 
-_CITY_OPTIONS: list[tuple[str, str]] = [
-    ("台北市", "台北市"),
-    ("新北市", "新北市"),
-    ("桃園市", "桃園市"),
-    ("台中市", "台中市"),
-    ("台南市", "台南市"),
-    ("高雄市", "高雄市"),
-    ("嘉義市", "嘉義市"),
-    ("新竹市", "新竹市"),
-    ("全部台灣", "all"),
-]
+_REGIONS: dict[str, tuple[str, list[str]]] = {
+    "north": (
+        "北部",
+        ["台北市", "新北市", "基隆市", "桃園市", "新竹市", "新竹縣", "宜蘭縣"],
+    ),
+    "central": ("中部", ["台中市", "苗栗縣", "彰化縣", "南投縣", "雲林縣"]),
+    "south": ("南部", ["高雄市", "台南市", "嘉義市", "嘉義縣", "屏東縣"]),
+    "east": ("東部", ["花蓮縣", "台東縣"]),
+    "island": ("離島", ["澎湖縣", "金門縣", "連江縣"]),
+}
 
 PERSISTENT_KEYBOARD = ReplyKeyboardMarkup(
     [
@@ -106,26 +105,61 @@ def build_hour_keyboard(slot: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def build_city_keyboard(hour: int) -> InlineKeyboardMarkup:
+def build_region_keyboard(hour: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("北部", callback_data=f"region:{hour}:north"),
+                InlineKeyboardButton("中部", callback_data=f"region:{hour}:central"),
+                InlineKeyboardButton("南部", callback_data=f"region:{hour}:south"),
+            ],
+            [
+                InlineKeyboardButton("東部", callback_data=f"region:{hour}:east"),
+                InlineKeyboardButton("離島", callback_data=f"region:{hour}:island"),
+            ],
+            [InlineKeyboardButton("不限地區", callback_data=f"city:{hour}:all")],
+        ]
+    )
+
+
+def build_region_only_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("北部", callback_data="region_only:north"),
+                InlineKeyboardButton("中部", callback_data="region_only:central"),
+                InlineKeyboardButton("南部", callback_data="region_only:south"),
+            ],
+            [
+                InlineKeyboardButton("東部", callback_data="region_only:east"),
+                InlineKeyboardButton("離島", callback_data="region_only:island"),
+            ],
+            [InlineKeyboardButton("不限地區", callback_data="city_only:all")],
+        ]
+    )
+
+
+def build_city_keyboard_for_region(region_key: str, hour: int) -> InlineKeyboardMarkup:
+    cities = _REGIONS[region_key][1]
     rows: list[list[InlineKeyboardButton]] = []
-    for i in range(0, len(_CITY_OPTIONS), 3):
+    for i in range(0, len(cities), 3):
         rows.append(
             [
-                InlineKeyboardButton(label, callback_data=f"city:{hour}:{key}")
-                for label, key in _CITY_OPTIONS[i : i + 3]
+                InlineKeyboardButton(city, callback_data=f"city:{hour}:{city}")
+                for city in cities[i : i + 3]
             ]
         )
     return InlineKeyboardMarkup(rows)
 
 
-def build_city_only_keyboard() -> InlineKeyboardMarkup:
-    """城市選擇鍵盤，callback_data 使用 city_only: 前綴（不帶時段）。"""
+def build_city_only_keyboard_for_region(region_key: str) -> InlineKeyboardMarkup:
+    cities = _REGIONS[region_key][1]
     rows: list[list[InlineKeyboardButton]] = []
-    for i in range(0, len(_CITY_OPTIONS), 3):
+    for i in range(0, len(cities), 3):
         rows.append(
             [
-                InlineKeyboardButton(label, callback_data=f"city_only:{key}")
-                for label, key in _CITY_OPTIONS[i : i + 3]
+                InlineKeyboardButton(city, callback_data=f"city_only:{city}")
+                for city in cities[i : i + 3]
             ]
         )
     return InlineKeyboardMarkup(rows)
@@ -175,7 +209,7 @@ async def hour_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     hour = int(query.data.split(":", 1)[1])
     await query.edit_message_text(
         f"你選擇了每天 {hour:02d}:00 接收通知。\n\n{_ASK_CITY_TEXT}",
-        reply_markup=build_city_keyboard(hour),
+        reply_markup=build_region_keyboard(hour),
     )
 
 
@@ -232,7 +266,39 @@ async def settings_city_callback(
     assert query is not None
     await query.answer()
     await query.edit_message_text(
-        _ASK_CITY_TEXT, reply_markup=build_city_only_keyboard()
+        _ASK_CITY_TEXT, reply_markup=build_region_only_keyboard()
+    )
+
+
+async def region_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """初次設定：使用者選擇地區後，顯示該地區的縣市清單。"""
+    query = update.callback_query
+    assert query is not None
+    assert query.data is not None
+    await query.answer()
+    parts = query.data.split(":", 2)
+    hour = int(parts[1])
+    region_key = parts[2]
+    region_label, _ = _REGIONS[region_key]
+    await query.edit_message_text(
+        f"「{region_label}」有以下縣市，請選擇：",
+        reply_markup=build_city_keyboard_for_region(region_key, hour),
+    )
+
+
+async def region_only_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """設定修改：使用者選擇地區後，顯示該地區的縣市清單（不影響推播時段）。"""
+    query = update.callback_query
+    assert query is not None
+    assert query.data is not None
+    await query.answer()
+    region_key = query.data.split(":", 1)[1]
+    region_label, _ = _REGIONS[region_key]
+    await query.edit_message_text(
+        f"「{region_label}」有以下縣市，請選擇：",
+        reply_markup=build_city_only_keyboard_for_region(region_key),
     )
 
 

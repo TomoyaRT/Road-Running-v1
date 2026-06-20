@@ -25,6 +25,8 @@ from src.bot.handlers import (
     hour_callback,
     nav_callback,
     open_settings_callback,
+    region_callback,
+    region_only_callback,
     settings_city_callback,
     settings_time_callback,
     slot_callback,
@@ -60,6 +62,10 @@ def _build_app() -> Application:  # type: ignore[type-arg]
     app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
     app.add_handler(CallbackQueryHandler(slot_callback, pattern=r"^slot:"))
     app.add_handler(CallbackQueryHandler(hour_callback, pattern=r"^hour:"))
+    app.add_handler(CallbackQueryHandler(region_callback, pattern=r"^region:"))
+    app.add_handler(
+        CallbackQueryHandler(region_only_callback, pattern=r"^region_only:")
+    )
     app.add_handler(CallbackQueryHandler(city_callback, pattern=r"^city:"))
     app.add_handler(CallbackQueryHandler(city_only_callback, pattern=r"^city_only:"))
     app.add_handler(CallbackQueryHandler(nav_callback, pattern=r"^nav:"))

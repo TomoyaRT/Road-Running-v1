@@ -7,9 +7,9 @@ import pytest
 from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 from src.bot.handlers import (
-    build_city_keyboard,
-    build_city_only_keyboard,
     build_hour_keyboard,
+    build_region_keyboard,
+    build_region_only_keyboard,
     build_settings_keyboard,
     build_slot_keyboard,
     city_callback,
@@ -18,6 +18,8 @@ from src.bot.handlers import (
     hour_callback,
     nav_callback,
     open_settings_callback,
+    region_callback,
+    region_only_callback,
     settings_city_callback,
     settings_time_callback,
     slot_callback,
@@ -120,11 +122,11 @@ async def test_hour_callback_shows_city_selection_keyboard(
     markup = call.kwargs.get("reply_markup")
     assert isinstance(markup, InlineKeyboardMarkup)
     all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
-    assert any(d.startswith("city:9:") for d in all_data)
+    assert any(d.startswith("region:9:") for d in all_data)
 
 
 @pytest.mark.asyncio
-async def test_hour_callback_includes_selected_hour_in_city_callbacks(
+async def test_hour_callback_includes_selected_hour_in_region_callbacks(
     mock_callback_update, mock_context
 ):
     mock_callback_update.callback_query.data = "hour:20"
@@ -133,7 +135,7 @@ async def test_hour_callback_includes_selected_hour_in_city_callbacks(
     call = mock_callback_update.callback_query.edit_message_text.call_args
     markup = call.kwargs.get("reply_markup")
     all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
-    assert all(d.startswith("city:20:") for d in all_data)
+    assert all(d.startswith("region:20:") or d == "city:20:all" for d in all_data)
 
 
 @pytest.mark.asyncio
@@ -591,22 +593,23 @@ def test_build_slot_keyboard_covers_all_slots():
 # ── build_city_keyboard ────────────────────────────────────────────────────────
 
 
-def test_build_city_keyboard_embeds_hour_in_callback_data():
-    markup = build_city_keyboard(hour=9)
+def test_build_region_keyboard_contains_all_regions():
+    markup = build_region_keyboard(hour=9)
+    all_labels = [btn.text for row in markup.inline_keyboard for btn in row]
+    for label in ["北部", "中部", "南部", "東部", "離島", "不限地區"]:
+        assert label in all_labels
+
+
+def test_build_region_keyboard_embeds_hour_in_region_callbacks():
+    markup = build_region_keyboard(hour=9)
     all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
-    assert all(d.startswith("city:9:") for d in all_data)
+    assert any(d.startswith("region:9:") for d in all_data)
 
 
-def test_build_city_keyboard_includes_all_taiwan_option():
-    markup = build_city_keyboard(hour=9)
+def test_build_region_keyboard_all_taiwan_uses_city_callback():
+    markup = build_region_keyboard(hour=9)
     all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
     assert "city:9:all" in all_data
-
-
-def test_build_city_keyboard_has_multiple_cities():
-    markup = build_city_keyboard(hour=9)
-    buttons = [btn for row in markup.inline_keyboard for btn in row]
-    assert len(buttons) >= 3
 
 
 # ── build_settings_keyboard ───────────────────────────────────────────────────
@@ -628,13 +631,44 @@ def test_build_settings_keyboard_has_time_city_and_unsubscribe():
 # ── build_city_only_keyboard ──────────────────────────────────────────────────
 
 
-def test_build_city_only_keyboard_uses_city_only_prefix():
-    markup = build_city_only_keyboard()
-    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
-    assert all(d.startswith("city_only:") for d in all_data)
+def test_build_region_only_keyboard_contains_all_regions():
+    markup = build_region_only_keyboard()
+    all_labels = [btn.text for row in markup.inline_keyboard for btn in row]
+    for label in ["北部", "中部", "南部", "東部", "離島", "不限地區"]:
+        assert label in all_labels
 
 
-def test_build_city_only_keyboard_includes_all_option():
-    markup = build_city_only_keyboard()
+def test_build_region_only_keyboard_all_taiwan_uses_city_only_callback():
+    markup = build_region_only_keyboard()
     all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
     assert "city_only:all" in all_data
+
+
+@pytest.mark.asyncio
+async def test_region_callback_shows_north_cities(mock_callback_update, mock_context):
+    mock_callback_update.callback_query.data = "region:8:north"
+    await region_callback(mock_callback_update, mock_context)
+
+    call = mock_callback_update.callback_query.edit_message_text.call_args
+    markup = call.kwargs.get("reply_markup")
+    all_labels = [btn.text for row in markup.inline_keyboard for btn in row]
+    assert "台北市" in all_labels
+    assert "新北市" in all_labels
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert all(d.startswith("city:8:") for d in all_data)
+
+
+@pytest.mark.asyncio
+async def test_region_only_callback_shows_south_cities(
+    mock_callback_update, mock_context
+):
+    mock_callback_update.callback_query.data = "region_only:south"
+    await region_only_callback(mock_callback_update, mock_context)
+
+    call = mock_callback_update.callback_query.edit_message_text.call_args
+    markup = call.kwargs.get("reply_markup")
+    all_labels = [btn.text for row in markup.inline_keyboard for btn in row]
+    assert "高雄市" in all_labels
+    assert "台南市" in all_labels
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert all(d.startswith("city_only:") for d in all_data)
