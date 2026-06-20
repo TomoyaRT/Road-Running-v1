@@ -400,22 +400,60 @@ def test_extract_organizer_returns_none_when_absent():
 # ── _extract_categories ───────────────────────────────────────────────────────
 
 
-def test_extract_categories_from_table_with_slash_separator():
-    html = "<table><tr><td>比賽組別</td><td>全程馬拉松 / 半程馬拉松 / 10K</td></tr></table>"
+def test_extract_categories_from_biji_select_multiple_options():
+    """biji <select><option> 結構可正確取出全部組別（placeholder 排除）。"""
+    html = """
+    <html><body>
+      <select>
+        <option>請選擇參賽組別</option>
+        <option>全程馬拉松 42K</option>
+        <option>半程馬拉松 21K</option>
+        <option>10K 10K</option>
+      </select>
+    </body></html>
+    """
     soup = BeautifulSoup(html, "html.parser")
     result = _extract_categories(soup)
-    assert "全程馬拉松" in result
-    assert "半程馬拉松" in result
-    assert "10K" in result
+    assert "全程馬拉松 42K" in result
+    assert "半程馬拉松 21K" in result
+    assert "10K" in result  # "10K 10K" deduplicated
+    assert not any("請選擇" in c for c in result)
 
 
-def test_extract_categories_from_table_with_newline_separator():
-    html = "<table><tr><td>組別</td><td>挑戰組 3K\n熱跑組 6.5K</td></tr></table>"
+def test_extract_categories_filters_placeholder_and_returns_correct_count():
+    """placeholder 被過濾，回傳數量與實際組別一致。"""
+    html = """
+    <html><body>
+      <select>
+        <option>請選擇參賽組別</option>
+        <option>挑戰組 3K</option>
+        <option>熱跑組 6.5K</option>
+      </select>
+    </body></html>
+    """
     soup = BeautifulSoup(html, "html.parser")
     result = _extract_categories(soup)
     assert len(result) == 2
     assert "挑戰組 3K" in result
     assert "熱跑組 6.5K" in result
+
+
+def test_extract_categories_deduplicates_repeated_tokens():
+    """biji 的「10K 10K」選項應收斂為「10K」。"""
+    html = """
+    <html><body>
+      <select>
+        <option>請選擇參賽組別</option>
+        <option>10K 10K</option>
+        <option>5K 5K</option>
+      </select>
+    </body></html>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    result = _extract_categories(soup)
+    assert "10K" in result
+    assert "5K" in result
+    assert "10K 10K" not in result
 
 
 def test_extract_categories_returns_empty_when_absent():

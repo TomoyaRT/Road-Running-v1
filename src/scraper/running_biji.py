@@ -61,7 +61,6 @@ _SKIP_DOMAINS = {
 }
 _REG_KEYWORDS = {"報名", "線上報名", "立刻報名", "我要報名", "Register"}
 _BROCHURE_KEYWORDS = {"活動簡章", "簡章", "賽事簡章"}
-_CATEGORY_KEYWORDS = {"組別", "比賽組別", "比賽項目", "路跑組別"}
 
 # 專用 thread pool，避免 1-CPU Cloud Run 上 asyncio 預設 pool 只有 ~5 條而拖慢爬蟲
 _ENRICH_EXECUTOR = ThreadPoolExecutor(max_workers=16)
@@ -340,21 +339,43 @@ def _extract_organizer(soup: BeautifulSoup) -> str | None:
     return None
 
 
+_CATEGORY_PLACEHOLDERS = {"請選擇", "參賽組別", "請選擇組別"}
+
+
 def _extract_categories(soup: BeautifulSoup) -> list[str]:
-    """從活動詳情頁 HTML 提取路跑組別。"""
-    for cell in soup.find_all(["td", "th"]):
-        if any(kw in cell.get_text(strip=True) for kw in _CATEGORY_KEYWORDS):
-            nxt = cell.find_next_sibling(["td", "th"])
-            if nxt:
-                raw = nxt.get_text(separator="\n", strip=True)
-                cats = [
-                    c.strip()
-                    for c in re.split(r"[、/\n\r|]", raw)
-                    if c.strip() and len(c.strip()) < 30
-                ]
-                if cats:
-                    return cats
-    return []
+    """從 biji 活動詳情頁的 <select><option> 取出完整路跑組別。"""
+    select: Tag | None = None
+    for sel in soup.find_all("select"):
+        if not isinstance(sel, Tag):
+            continue
+        for opt in sel.find_all("option"):
+            if isinstance(opt, Tag) and "參賽組別" in opt.get_text(strip=True):
+                select = sel
+                break
+        if select:
+            break
+
+    if select is None:
+        all_selects = [s for s in soup.find_all("select") if isinstance(s, Tag)]
+        if len(all_selects) == 1:
+            select = all_selects[0]
+
+    if select is None:
+        return []
+
+    result = []
+    for opt in select.find_all("option"):
+        if not isinstance(opt, Tag):
+            continue
+        text = opt.get_text(strip=True)
+        if not text or len(text) >= 30:
+            continue
+        if any(p in text for p in _CATEGORY_PLACEHOLDERS):
+            continue
+        tokens = text.split()
+        deduped = [t for i, t in enumerate(tokens) if i == 0 or tokens[i - 1] != t]
+        result.append(" ".join(deduped))
+    return result
 
 
 def _fetch_biji_detail_sync(event_url: str) -> _BijiEventDetail:
