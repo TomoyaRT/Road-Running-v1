@@ -22,7 +22,6 @@ from src.bot.handlers import (
     get_db,
     handle_text_message,
     hour_callback,
-    nav_callback,
     open_settings_callback,
     region_callback,
     region_only_callback,
@@ -68,7 +67,6 @@ def _build_app() -> Application:  # type: ignore[type-arg]
     )
     app.add_handler(CallbackQueryHandler(city_callback, pattern=r"^city:"))
     app.add_handler(CallbackQueryHandler(city_only_callback, pattern=r"^city_only:"))
-    app.add_handler(CallbackQueryHandler(nav_callback, pattern=r"^nav:"))
     app.add_handler(
         CallbackQueryHandler(open_settings_callback, pattern=r"^open_settings$")
     )

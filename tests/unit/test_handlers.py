@@ -16,7 +16,6 @@ from src.bot.handlers import (
     city_only_callback,
     handle_text_message,
     hour_callback,
-    nav_callback,
     open_settings_callback,
     region_callback,
     region_only_callback,
@@ -352,106 +351,6 @@ async def test_unsubscribe_btn_callback_shows_confirmation(
 
     text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
     assert "取消" in text
-
-
-# ── nav_callback ──────────────────────────────────────────────────────────────
-
-_SAMPLE_EVENTS_NAV = [
-    RaceEvent(
-        name="活動0",
-        race_date=date(2026, 11, 1),
-        location="台北市",
-        url="https://running.biji.co/index.php?q=competition&act=info&cid=0",
-        reg_start=date(2026, 6, 1),
-        reg_end=date(2026, 8, 31),
-        city="台北市",
-        official_url="https://official-reg.example.com",
-    ),
-    RaceEvent(
-        name="活動1",
-        race_date=date(2026, 11, 2),
-        location="台北市",
-        url="https://running.biji.co/index.php?q=competition&act=info&cid=1",
-        reg_start=date(2026, 6, 1),
-        reg_end=date(2026, 8, 31),
-        city="台北市",
-    ),
-    RaceEvent(
-        name="活動2",
-        race_date=date(2026, 11, 3),
-        location="台北市",
-        url="https://running.biji.co/index.php?q=competition&act=info&cid=2",
-        reg_start=date(2026, 6, 1),
-        reg_end=date(2026, 8, 31),
-        city="台北市",
-    ),
-]
-
-
-@pytest.mark.asyncio
-async def test_nav_callback_edits_message_for_open_events(
-    mock_callback_update, mock_context
-):
-    mock_callback_update.callback_query.data = "nav:o:1:all"
-    mock_db = MagicMock()
-    mock_db.get_events.return_value = _SAMPLE_EVENTS_NAV
-
-    with (
-        patch("src.bot.handlers.get_db", return_value=mock_db),
-        patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS_NAV),
-        patch(
-            "src.bot.handlers.filter_events_by_city", return_value=_SAMPLE_EVENTS_NAV
-        ),
-    ):
-        await nav_callback(mock_callback_update, mock_context)
-
-    mock_callback_update.callback_query.edit_message_media.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_nav_callback_shows_correct_event_index(
-    mock_callback_update, mock_context
-):
-    mock_callback_update.callback_query.data = "nav:o:1:all"
-    mock_db = MagicMock()
-    mock_db.get_events.return_value = _SAMPLE_EVENTS_NAV
-
-    with (
-        patch("src.bot.handlers.get_db", return_value=mock_db),
-        patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS_NAV),
-        patch(
-            "src.bot.handlers.filter_events_by_city", return_value=_SAMPLE_EVENTS_NAV
-        ),
-    ):
-        await nav_callback(mock_callback_update, mock_context)
-
-    call = mock_callback_update.callback_query.edit_message_media.call_args
-    media = call.kwargs.get("media") or call.args[0]
-    assert "活動1" in media.caption
-    assert "2 / 3" in media.caption
-
-
-@pytest.mark.asyncio
-async def test_nav_callback_uses_official_url_when_available(
-    mock_callback_update, mock_context
-):
-    mock_callback_update.callback_query.data = "nav:o:0:all"
-    mock_db = MagicMock()
-    mock_db.get_events.return_value = _SAMPLE_EVENTS_NAV
-
-    with (
-        patch("src.bot.handlers.get_db", return_value=mock_db),
-        patch("src.bot.handlers.filter_open_events", return_value=_SAMPLE_EVENTS_NAV),
-        patch(
-            "src.bot.handlers.filter_events_by_city", return_value=_SAMPLE_EVENTS_NAV
-        ),
-    ):
-        await nav_callback(mock_callback_update, mock_context)
-
-    call = mock_callback_update.callback_query.edit_message_media.call_args
-    markup = call.kwargs.get("reply_markup")
-    reg_buttons = [btn for row in markup.inline_keyboard for btn in row if btn.url]
-    assert reg_buttons[0].url == "https://official-reg.example.com"
 
 
 # ── handle_text_message ────────────────────────────────────────────────────────

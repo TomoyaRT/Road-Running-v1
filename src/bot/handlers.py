@@ -6,7 +6,6 @@ import os
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    InputMediaPhoto,
     KeyboardButton,
     ReplyKeyboardMarkup,
     Update,
@@ -14,18 +13,7 @@ from telegram import (
 )
 from telegram.ext import ContextTypes
 
-from src.bot.cards import (
-    PLACEHOLDER_IMAGE_URL,
-    build_nav_markup,
-    format_carousel_text,
-)
 from src.db.firestore_client import FirestoreClient
-from src.scraper.running_biji import (
-    filter_events_by_city,
-    filter_open_events,
-    filter_upcoming_events,
-)
-from src.utils import tw_today
 
 logger = logging.getLogger(__name__)
 
@@ -338,40 +326,6 @@ async def unsubscribe_btn_callback(
     db = get_db()
     db.unsubscribe(user_id=update.effective_user.id)
     await query.edit_message_text("已取消訂閱，不再推播路跑通知。")
-
-
-async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """輪播導航：更新訊息顯示上一張 / 下一張活動卡片。"""
-    query = update.callback_query
-    assert query is not None
-    assert query.data is not None
-    await query.answer()
-
-    parts = query.data.split(":", 3)
-    event_type = parts[1]
-    index = int(parts[2])
-    city = parts[3]
-
-    events = get_db().get_events()
-    today = tw_today()
-    if event_type == "o":
-        filtered = filter_open_events(events, today)
-    else:
-        filtered = filter_upcoming_events(events, today)
-
-    city_events = filter_events_by_city(filtered, city)
-    total = len(city_events)
-
-    if not city_events or index < 0 or index >= total:
-        return
-
-    event = city_events[index]
-    official_url = event.official_url or event.url
-    text = format_carousel_text(event, index, total)
-    markup = build_nav_markup(event_type, index, total, city, official_url)
-    photo = event.image_url or PLACEHOLDER_IMAGE_URL
-    media = InputMediaPhoto(media=photo, caption=text, parse_mode="HTML")
-    await query.edit_message_media(media=media, reply_markup=markup)
 
 
 async def handle_text_message(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import quote
 
 import pytest
 
@@ -58,8 +59,13 @@ _USERS_ALL = [
 ]
 
 
+def _all_buttons(markup):
+    return [btn for row in markup.inline_keyboard for btn in row]
+
+
 @pytest.mark.asyncio
-async def test_notify_users_sends_carousel_to_each_subscriber():
+async def test_notify_users_sends_miniapp_to_each_subscriber():
+    """推播改用 mini app：每位訂閱者收到一則含 web_app 按鈕的訊息。"""
     mock_bot = AsyncMock()
     mock_db = MagicMock()
     mock_db.get_users_for_hour.return_value = _USERS_ALL
@@ -68,19 +74,19 @@ async def test_notify_users_sends_carousel_to_each_subscriber():
     with (
         patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.get_db", return_value=mock_db),
-        patch(
-            "src.notifier.push.send_carousel_start", new_callable=AsyncMock
-        ) as mock_carousel,
     ):
         await notify_users(bot=mock_bot, hour=8)
 
-    assert mock_carousel.call_count == 2
-    chat_ids = {c.args[1] for c in mock_carousel.call_args_list}
+    assert mock_bot.send_message.call_count == 2
+    chat_ids = {c.kwargs["chat_id"] for c in mock_bot.send_message.call_args_list}
     assert chat_ids == {111, 222}
+    for c in mock_bot.send_message.call_args_list:
+        buttons = _all_buttons(c.kwargs["reply_markup"])
+        assert any(btn.web_app is not None for btn in buttons)
 
 
 @pytest.mark.asyncio
-async def test_notify_users_sends_footer_after_carousel():
+async def test_notify_users_miniapp_message_has_settings_button():
     mock_bot = AsyncMock()
     mock_db = MagicMock()
     mock_db.get_users_for_hour.return_value = [
@@ -91,20 +97,18 @@ async def test_notify_users_sends_footer_after_carousel():
     with (
         patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.get_db", return_value=mock_db),
-        patch("src.notifier.push.send_carousel_start", new_callable=AsyncMock),
     ):
         await notify_users(bot=mock_bot, hour=8)
 
     mock_bot.send_message.assert_called_once()
-    call = mock_bot.send_message.call_args
-    markup = call.kwargs.get("reply_markup")
-    assert markup is not None
-    buttons = [btn for row in markup.inline_keyboard for btn in row]
+    buttons = _all_buttons(mock_bot.send_message.call_args.kwargs["reply_markup"])
+    assert any(btn.web_app is not None for btn in buttons)
     assert any(btn.callback_data == "open_settings" for btn in buttons)
 
 
 @pytest.mark.asyncio
 async def test_notify_users_filters_events_by_city():
+    """城市偏好仍決定是否推播：兩位不同城市、各有活動者都各收到一則。"""
     mock_bot = AsyncMock()
     mock_db = MagicMock()
     mock_db.get_users_for_hour.return_value = [
@@ -116,17 +120,17 @@ async def test_notify_users_filters_events_by_city():
     with (
         patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.get_db", return_value=mock_db),
-        patch(
-            "src.notifier.push.send_carousel_start", new_callable=AsyncMock
-        ) as mock_carousel,
     ):
         await notify_users(bot=mock_bot, hour=8)
 
-    assert mock_carousel.call_count == 2
-    call_111 = next(c for c in mock_carousel.call_args_list if c.args[1] == 111)
-    assert all(e.city == "台北市" for e in call_111.args[2])
-    call_222 = next(c for c in mock_carousel.call_args_list if c.args[1] == 222)
-    assert all(e.city == "高雄市" for e in call_222.args[2])
+    assert mock_bot.send_message.call_count == 2
+    by_uid = {c.kwargs["chat_id"]: c for c in mock_bot.send_message.call_args_list}
+    assert set(by_uid) == {111, 222}
+    # mini app URL 帶上各自的城市偏好（URL-encoded）
+    url_111 = _all_buttons(by_uid[111].kwargs["reply_markup"])[0].web_app.url
+    url_222 = _all_buttons(by_uid[222].kwargs["reply_markup"])[0].web_app.url
+    assert quote("台北市") in url_111
+    assert quote("高雄市") in url_222
 
 
 @pytest.mark.asyncio
@@ -141,13 +145,10 @@ async def test_notify_users_skips_user_when_no_city_events():
     with (
         patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.get_db", return_value=mock_db),
-        patch(
-            "src.notifier.push.send_carousel_start", new_callable=AsyncMock
-        ) as mock_carousel,
     ):
         await notify_users(bot=mock_bot, hour=8)
 
-    mock_carousel.assert_not_called()
+    mock_bot.send_message.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -160,13 +161,9 @@ async def test_notify_users_skips_when_no_open_events():
     with (
         patch("src.notifier.push.filter_open_events", return_value=[]),
         patch("src.notifier.push.get_db", return_value=mock_db),
-        patch(
-            "src.notifier.push.send_carousel_start", new_callable=AsyncMock
-        ) as mock_carousel,
     ):
         await notify_users(bot=mock_bot, hour=8)
 
-    mock_carousel.assert_not_called()
     mock_bot.send_message.assert_not_called()
 
 
@@ -178,13 +175,10 @@ async def test_notify_users_skips_when_no_subscribers():
 
     with (
         patch("src.notifier.push.get_db", return_value=mock_db),
-        patch(
-            "src.notifier.push.send_carousel_start", new_callable=AsyncMock
-        ) as mock_carousel,
     ):
         await notify_users(bot=mock_bot, hour=8)
 
-    mock_carousel.assert_not_called()
+    mock_bot.send_message.assert_not_called()
 
 
 @pytest.mark.asyncio
