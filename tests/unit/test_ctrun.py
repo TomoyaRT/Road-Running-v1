@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from src.scraper.ctrun import collect_event_urls, parse_detail_html
+from src.scraper.ctrun import _extract_categories, collect_event_urls, parse_detail_html
 
 _LIST_HTML = """
 <div class="pri_table_list">
@@ -21,6 +21,10 @@ _DETAIL_HTML = """
   <div>活動資訊 活動名稱 2026 嘉義雙潭星光路跑 活動日期 2026年08月08日（星期六）
   報名時間 2026/06/11(四)~2026/07/15(三) 活動地點 嘉義市立蘭潭國民中學(嘉義市東區民權東路32號)
   主辦單位 嘉義市政府 承辦單位 嘉義市西區公所</div>
+  <table>
+    <tr><td>報名組別</td><td>13K挑戰組</td><td>6.5K樂跑組</td><td>3.5K體驗組</td></tr>
+    <tr><td>報名費用</td><td>NT$1080</td><td>NT$980</td><td>NT$880</td></tr>
+  </table>
 </body></html>
 """
 
@@ -60,6 +64,16 @@ def test_parse_detail_extracts_city_from_address():
     assert event.city == "嘉義市"
 
 
+def test_parse_detail_city_uses_resolver_for_disambiguation():
+    """新竹縣竹北市 → 新竹縣（不是新竹市）。"""
+    html = _DETAIL_HTML.replace(
+        "嘉義市立蘭潭國民中學(嘉義市東區民權東路32號)", "新竹縣竹北市光明路123號"
+    )
+    event = parse_detail_html(html, _DETAIL_URL)
+    assert event is not None
+    assert event.city == "新竹縣"
+
+
 def test_parse_detail_organizer_ignores_disclaimer_noise():
     """頁面前段有『以主辦單位公告為準』的雜訊，須取活動資訊區塊內的真正主辦。"""
     event = parse_detail_html(_DETAIL_HTML, _DETAIL_URL)
@@ -71,7 +85,7 @@ def test_parse_detail_sets_official_url_image_and_source():
     event = parse_detail_html(_DETAIL_HTML, _DETAIL_URL)
     assert event is not None
     assert event.official_url == _DETAIL_URL
-    assert event.image_url.endswith("BannerImage/x.jpg")
+    assert event.image_url is not None and event.image_url.endswith("BannerImage/x.jpg")
     assert event.source == "ctrun"
 
 
@@ -93,3 +107,36 @@ def test_parse_detail_date_robust_when_name_contains_label_substring():
     assert event is not None
     assert event.race_date == date(2026, 9, 20)
     assert event.reg_start == date(2026, 6, 1)
+
+
+def test_parse_detail_extracts_categories():
+    event = parse_detail_html(_DETAIL_HTML, _DETAIL_URL)
+    assert event is not None
+    assert "13K挑戰組" in event.categories
+    assert "6.5K樂跑組" in event.categories
+    assert "3.5K體驗組" in event.categories
+
+
+def test_extract_categories_matches_報名組別_header():
+    from bs4 import BeautifulSoup
+
+    html = "<table><tr><td>報名組別</td><td>全馬</td><td>半馬</td></tr></table>"
+    soup = BeautifulSoup(html, "html.parser")
+    cats = _extract_categories(soup)
+    assert cats == ["全馬", "半馬"]
+
+
+def test_extract_categories_matches_組別_header():
+    from bs4 import BeautifulSoup
+
+    html = "<table><tr><td>組別</td><td>10K組</td><td>5K組</td></tr></table>"
+    soup = BeautifulSoup(html, "html.parser")
+    cats = _extract_categories(soup)
+    assert cats == ["10K組", "5K組"]
+
+
+def test_extract_categories_returns_empty_when_no_table():
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup("<html><body><p>無組別</p></body></html>", "html.parser")
+    assert _extract_categories(soup) == []

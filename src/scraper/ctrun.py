@@ -8,7 +8,8 @@ from datetime import date
 import requests
 from bs4 import BeautifulSoup, Tag
 
-from src.scraper.running_biji import RaceEvent, extract_og_image, find_city
+from src.scraper.city_resolver import resolve_city
+from src.scraper.running_biji import RaceEvent, extract_og_image
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ _FIELD_LABELS = (
     "聯絡",
 )
 _EXECUTOR = ThreadPoolExecutor(max_workers=12)
+_CATEGORY_HEADERS = {"報名組別", "組別"}
 
 
 def fetch_events(url: str = BASE_URL) -> list[RaceEvent]:
@@ -67,7 +69,7 @@ def _safe_fetch_detail(url: str) -> RaceEvent | None:
         resp.raise_for_status()
         return parse_detail_html(resp.text, url)
     except Exception:
-        logger.warning(f"ctrun fetch detail failed: {url}")
+        logger.warning("ctrun fetch detail failed: %s", url)
         return None
 
 
@@ -78,7 +80,6 @@ def parse_detail_html(html: str, url: str) -> RaceEvent | None:
     idx = full_text.find(_INFO_ANCHOR)
     info = full_text[idx:] if idx >= 0 else full_text
 
-    # 日期用「標籤後固定視窗」掃描（日期格式嚴謹），避免欄位值含標籤字串時被 _field 截斷
     race_date = _date_after(info, "活動日期")
     name = _field(info, "活動名稱") or _og_title(soup)
     if race_date is None or not name:
@@ -92,12 +93,31 @@ def parse_detail_html(html: str, url: str) -> RaceEvent | None:
         url=url,
         reg_start=reg_start,
         reg_end=reg_end,
-        city=find_city(location),
+        city=resolve_city(location),
         image_url=extract_og_image(html, base_url=url),
         official_url=url,
         organizer=_field(info, "主辦單位"),
+        categories=_extract_categories(soup),
         source="ctrun",
     )
+
+
+def _extract_categories(soup: BeautifulSoup) -> list[str]:
+    """從「報名組別」或「組別」表頭行取出各報名組別名稱。"""
+    for table in soup.find_all("table"):
+        if not isinstance(table, Tag):
+            continue
+        for row in table.find_all("tr"):
+            if not isinstance(row, Tag):
+                continue
+            cells = [
+                c.get_text(strip=True)
+                for c in row.find_all(["td", "th"])
+                if isinstance(c, Tag)
+            ]
+            if cells and cells[0] in _CATEGORY_HEADERS:
+                return [c for c in cells[1:] if c]
+    return []
 
 
 def _field(info: str, label: str) -> str | None:
@@ -115,7 +135,7 @@ def _field(info: str, label: str) -> str | None:
 
 
 def _window_after(info: str, label: str, length: int) -> str:
-    """label 之後固定長度的文字視窗（不受後續標籤截斷影響，適合解析嚴謹格式如日期）。"""
+    """label 之後固定長度的文字視窗（不受後續標籤截斷影響）。"""
     idx = info.find(label)
     if idx < 0:
         return ""
