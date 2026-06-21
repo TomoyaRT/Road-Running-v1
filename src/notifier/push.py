@@ -9,7 +9,6 @@ from src.bot.handlers import _get_cloud_run_url, get_db
 from src.scraper.running_biji import (
     RaceEvent,
     filter_events_by_city,
-    filter_open_events,
 )
 from src.utils import tw_today
 
@@ -24,8 +23,8 @@ async def notify_users(bot: Bot, hour: int) -> None:
         logger.info(f"Hour {hour}: no subscribers, skip")
         return
 
-    events = db.get_events()
-    open_events = filter_open_events(events, tw_today())
+    today = tw_today()
+    open_events = db.get_open_events("all", today)
 
     if not open_events:
         logger.info(f"Hour {hour}: no open events, skip")

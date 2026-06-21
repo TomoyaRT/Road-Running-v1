@@ -361,3 +361,175 @@ def test_get_events_handles_null_reg_dates(db, mock_firestore):
     assert events[0].reg_start is None
     assert events[0].reg_end is None
     assert events[0].image_url is None
+
+
+# ── T5: sentinel dates ────────────────────────────────────────────────────────
+
+
+def _no_reg_event() -> RaceEvent:
+    return RaceEvent(
+        name="sportsnet活動",
+        race_date=date(2026, 11, 15),
+        location="台北市",
+        url="https://sportsnet.org.tw/1",
+        reg_start=None,
+        reg_end=None,
+        city="台北市",
+        source="sportsnet",
+    )
+
+
+def test_event_to_dict_uses_sentinel_for_none_reg_start():
+    """reg_start=None は "0001-01-01" ハシンチネルで保存される。"""
+    d = _event_to_dict(_no_reg_event())
+    assert d["reg_start"] == "0001-01-01"
+
+
+def test_event_to_dict_uses_sentinel_for_none_reg_end():
+    """reg_end=None は "9999-12-31" センチネルで保存される。"""
+    d = _event_to_dict(_no_reg_event())
+    assert d["reg_end"] == "9999-12-31"
+
+
+def test_event_to_dict_preserves_real_dates():
+    """実際の日付は変換されない。"""
+    d = _event_to_dict(_sample_event())
+    assert d["reg_start"] == "2026-06-01"
+    assert d["reg_end"] == "2026-08-31"
+
+
+def test_dict_to_event_converts_sentinel_reg_start_to_none():
+    """Firestore から "0001-01-01" を読み込むと reg_start=None に変換される。"""
+    data = {
+        "name": "x",
+        "race_date": "2026-11-15",
+        "location": "台北市",
+        "url": "https://sportsnet.org.tw/1",
+        "reg_start": "0001-01-01",
+        "reg_end": "9999-12-31",
+        "city": "台北市",
+        "image_url": None,
+        "official_url": None,
+        "organizer": None,
+        "categories": [],
+        "source": "sportsnet",
+    }
+    event = _dict_to_event(data)
+    assert event.reg_start is None
+
+
+def test_dict_to_event_converts_sentinel_reg_end_to_none():
+    """Firestore から "9999-12-31" を読み込むと reg_end=None に変換される。"""
+    data = {
+        "name": "x",
+        "race_date": "2026-11-15",
+        "location": "台北市",
+        "url": "https://sportsnet.org.tw/1",
+        "reg_start": "0001-01-01",
+        "reg_end": "9999-12-31",
+        "city": "台北市",
+        "image_url": None,
+        "official_url": None,
+        "organizer": None,
+        "categories": [],
+        "source": "sportsnet",
+    }
+    event = _dict_to_event(data)
+    assert event.reg_end is None
+
+
+def _make_sentinel_doc(name: str, race_date: str, city: str = "台北市") -> MagicMock:
+    doc = MagicMock()
+    doc.to_dict.return_value = {
+        "name": name,
+        "race_date": race_date,
+        "location": city,
+        "url": f"https://sportsnet.org.tw/{name}",
+        "reg_start": "0001-01-01",
+        "reg_end": "9999-12-31",
+        "city": city,
+        "image_url": None,
+        "official_url": None,
+        "organizer": None,
+        "categories": [],
+        "source": "sportsnet",
+    }
+    return doc
+
+
+def _setup_query_mock(mock_firestore, docs: list) -> MagicMock:
+    """連鎖 .where() 呼び出しに対応するクエリモック。"""
+    mock_q = MagicMock()
+    mock_q.where.return_value = mock_q
+    mock_q.stream.return_value = docs
+    mock_firestore.collection.return_value.where.return_value = mock_q
+    return mock_q
+
+
+def test_get_open_events_returns_future_sportsnet_event(db, mock_firestore):
+    """センチネル日付のsportsnet活動（race_date=未来）は get_open_events に含まれる。"""
+    doc = _make_sentinel_doc("未来路跑", "2026-11-15")
+    _setup_query_mock(mock_firestore, [doc])
+
+    events = db.get_open_events("all", date(2026, 6, 21))
+
+    assert len(events) == 1
+    assert events[0].name == "未来路跑"
+    assert events[0].reg_start is None
+    assert events[0].reg_end is None
+
+
+def test_get_open_events_excludes_past_sportsnet_event(db, mock_firestore):
+    """センチネル日付でも race_date が過去のイベントは除外される。"""
+    doc = _make_sentinel_doc("過去路跑", "2026-06-01")
+    _setup_query_mock(mock_firestore, [doc])
+
+    events = db.get_open_events("all", date(2026, 6, 21))
+
+    assert len(events) == 0
+
+
+def test_get_open_events_queries_events_collection(db, mock_firestore):
+    """get_open_events は "events" コレクションをクエリする。"""
+    _setup_query_mock(mock_firestore, [])
+
+    db.get_open_events("all", date(2026, 6, 21))
+
+    mock_firestore.collection.assert_any_call("events")
+
+
+def test_get_upcoming_events_returns_event_opening_soon(db, mock_firestore):
+    """30日以内に報名開始するイベントは get_upcoming_events に含まれる。"""
+    doc = MagicMock()
+    doc.to_dict.return_value = {
+        "name": "近期開放路跑",
+        "race_date": "2026-12-01",
+        "location": "台中市",
+        "url": "https://irunner.biji.co/1",
+        "reg_start": "2026-07-10",
+        "reg_end": "2026-09-30",
+        "city": "台中市",
+        "image_url": None,
+        "official_url": None,
+        "organizer": None,
+        "categories": [],
+        "source": "biji",
+    }
+    _setup_query_mock(mock_firestore, [doc])
+
+    today = date(2026, 6, 21)
+    events = db.get_upcoming_events("all", today, days=30)
+
+    assert len(events) == 1
+    assert events[0].name == "近期開放路跑"
+
+
+def test_get_upcoming_events_excludes_sportsnet_sentinel(db, mock_firestore):
+    """センチネル reg_start ("0001-01-01") はupcomingに含まれない（open扱い）。"""
+    doc = _make_sentinel_doc("sportsnet路跑", "2026-11-15")
+    _setup_query_mock(mock_firestore, [doc])
+
+    today = date(2026, 6, 21)
+    events = db.get_upcoming_events("all", today, days=30)
+
+    assert len(events) == 0

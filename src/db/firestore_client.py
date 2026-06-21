@@ -2,18 +2,28 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from google.cloud import firestore
 
-from src.scraper.running_biji import RaceEvent
+from src.scraper.running_biji import (
+    RaceEvent,
+    filter_open_events,
+    filter_upcoming_events,
+)
 
 logger = logging.getLogger(__name__)
 
 _COLLECTION = "users"
 _EVENTS_COLLECTION = "events"
 _BATCH_LIMIT = 450  # Firestore 單批上限 500，保留安全邊際
+
+# sportsnet / joinnow 型活動的 reg_start / reg_end 為 None。
+# Firestore 不支援對 null 欄位做範圍查詢，以哨兵字串代替 None 儲存，
+# 讀回時再還原為 None 供 Python 層正確處理。
+_SENTINEL_REG_START = "0001-01-01"  # 相當於「無限早於」任何報名開始日
+_SENTINEL_REG_END = "9999-12-31"  # 相當於「永遠不截止」
 
 
 def _event_to_dict(event: RaceEvent) -> dict[str, Any]:
@@ -22,8 +32,10 @@ def _event_to_dict(event: RaceEvent) -> dict[str, Any]:
         "race_date": event.race_date.isoformat(),
         "location": event.location,
         "url": event.url,
-        "reg_start": event.reg_start.isoformat() if event.reg_start else None,
-        "reg_end": event.reg_end.isoformat() if event.reg_end else None,
+        "reg_start": event.reg_start.isoformat()
+        if event.reg_start
+        else _SENTINEL_REG_START,
+        "reg_end": event.reg_end.isoformat() if event.reg_end else _SENTINEL_REG_END,
         "city": event.city,
         "image_url": event.image_url,
         "official_url": event.official_url,
@@ -34,13 +46,23 @@ def _event_to_dict(event: RaceEvent) -> dict[str, Any]:
 
 
 def _dict_to_event(data: dict[str, Any]) -> RaceEvent:
+    raw_start = data["reg_start"]
+    raw_end = data["reg_end"]
     return RaceEvent(
         name=data["name"],
         race_date=date.fromisoformat(data["race_date"]),
         location=data["location"],
         url=data["url"],
-        reg_start=date.fromisoformat(data["reg_start"]) if data["reg_start"] else None,
-        reg_end=date.fromisoformat(data["reg_end"]) if data["reg_end"] else None,
+        reg_start=(
+            None
+            if (not raw_start or raw_start == _SENTINEL_REG_START)
+            else date.fromisoformat(raw_start)
+        ),
+        reg_end=(
+            None
+            if (not raw_end or raw_end == _SENTINEL_REG_END)
+            else date.fromisoformat(raw_end)
+        ),
         city=data.get("city", ""),
         image_url=data.get("image_url"),
         official_url=data.get("official_url"),
@@ -139,9 +161,43 @@ class FirestoreClient:
         )
 
     def get_events(self) -> list[RaceEvent]:
-        """讀取快取的活動清單。"""
+        """讀取快取的活動清單（全表掃描；舊版相容）。"""
         docs = self._db.collection(_EVENTS_COLLECTION).stream()
         return [_dict_to_event(doc.to_dict()) for doc in docs]
+
+    def get_open_events(self, city: str, today: date) -> list[RaceEvent]:
+        """Firestore クエリで候補を絞り込み、Python 側で filter_open_events を適用。
+
+        reg_end >= today を Firestore で絞り込む（哨兵 "9999-12-31" で null も命中）。
+        city != "all" の場合は city フィルターも追加（複合索引: city + reg_end）。
+        """
+        today_str = today.isoformat()
+        q = self._db.collection(_EVENTS_COLLECTION).where("reg_end", ">=", today_str)
+        if city != "all":
+            q = q.where("city", "==", city)
+        candidates = [_dict_to_event(doc.to_dict()) for doc in q.stream()]
+        return filter_open_events(candidates, today)
+
+    def get_upcoming_events(
+        self, city: str, today: date, days: int = 30
+    ) -> list[RaceEvent]:
+        """Firestore クエリで候補を絞り込み、Python 側で filter_upcoming_events を適用。
+
+        reg_start が今日より大きく deadline 以内のものを Firestore で絞り込む
+        （哨兵 "0001-01-01" は today より小さいため upcoming に入らない）。
+        city != "all" の場合は city フィルターも追加（複合索引: city + reg_start）。
+        """
+        today_str = today.isoformat()
+        deadline_str = (today + timedelta(days=days)).isoformat()
+        q = (
+            self._db.collection(_EVENTS_COLLECTION)
+            .where("reg_start", ">", today_str)
+            .where("reg_start", "<=", deadline_str)
+        )
+        if city != "all":
+            q = q.where("city", "==", city)
+        candidates = [_dict_to_event(doc.to_dict()) for doc in q.stream()]
+        return filter_upcoming_events(candidates, today, days)
 
     def get_users_for_hour(self, hour: int) -> list[dict[str, Any]]:
         """回傳指定推播時段的所有使用者資訊（含 user_id 與 preferred_city）。"""

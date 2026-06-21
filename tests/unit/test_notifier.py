@@ -20,11 +20,10 @@ async def test_notify_users_uses_tw_today_for_date_filtering():
     mock_db.get_users_for_hour.return_value = [
         {"user_id": 111, "preferred_city": "all"}
     ]
-    mock_db.get_events.return_value = []
+    mock_db.get_open_events.return_value = []
 
     with (
         patch("src.notifier.push.get_db", return_value=mock_db),
-        patch("src.notifier.push.filter_open_events", return_value=[]),
         patch("src.notifier.push.tw_today") as mock_tw_today,
     ):
         await notify_users(bot=mock_bot, hour=8)
@@ -69,12 +68,9 @@ async def test_notify_users_sends_miniapp_to_each_subscriber():
     mock_bot = AsyncMock()
     mock_db = MagicMock()
     mock_db.get_users_for_hour.return_value = _USERS_ALL
-    mock_db.get_events.return_value = _OPEN_EVENTS
+    mock_db.get_open_events.return_value = _OPEN_EVENTS
 
-    with (
-        patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
-        patch("src.notifier.push.get_db", return_value=mock_db),
-    ):
+    with patch("src.notifier.push.get_db", return_value=mock_db):
         await notify_users(bot=mock_bot, hour=8)
 
     assert mock_bot.send_message.call_count == 2
@@ -93,12 +89,9 @@ async def test_notify_users_miniapp_message_has_no_settings_button():
     mock_db.get_users_for_hour.return_value = [
         {"user_id": 111, "preferred_city": "all"}
     ]
-    mock_db.get_events.return_value = _OPEN_EVENTS
+    mock_db.get_open_events.return_value = _OPEN_EVENTS
 
-    with (
-        patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
-        patch("src.notifier.push.get_db", return_value=mock_db),
-    ):
+    with patch("src.notifier.push.get_db", return_value=mock_db):
         await notify_users(bot=mock_bot, hour=8)
 
     mock_bot.send_message.assert_called_once()
@@ -118,12 +111,9 @@ async def test_notify_users_filters_events_by_city():
         {"user_id": 111, "preferred_city": "台北市"},
         {"user_id": 222, "preferred_city": "高雄市"},
     ]
-    mock_db.get_events.return_value = _OPEN_EVENTS
+    mock_db.get_open_events.return_value = _OPEN_EVENTS
 
-    with (
-        patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
-        patch("src.notifier.push.get_db", return_value=mock_db),
-    ):
+    with patch("src.notifier.push.get_db", return_value=mock_db):
         await notify_users(bot=mock_bot, hour=8)
 
     assert mock_bot.send_message.call_count == 2
@@ -143,12 +133,9 @@ async def test_notify_users_skips_user_when_no_city_events():
     mock_db.get_users_for_hour.return_value = [
         {"user_id": 111, "preferred_city": "嘉義市"}
     ]
-    mock_db.get_events.return_value = _OPEN_EVENTS
+    mock_db.get_open_events.return_value = _OPEN_EVENTS
 
-    with (
-        patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
-        patch("src.notifier.push.get_db", return_value=mock_db),
-    ):
+    with patch("src.notifier.push.get_db", return_value=mock_db):
         await notify_users(bot=mock_bot, hour=8)
 
     mock_bot.send_message.assert_not_called()
@@ -159,12 +146,9 @@ async def test_notify_users_skips_when_no_open_events():
     mock_bot = AsyncMock()
     mock_db = MagicMock()
     mock_db.get_users_for_hour.return_value = _USERS_ALL
-    mock_db.get_events.return_value = []
+    mock_db.get_open_events.return_value = []
 
-    with (
-        patch("src.notifier.push.filter_open_events", return_value=[]),
-        patch("src.notifier.push.get_db", return_value=mock_db),
-    ):
+    with patch("src.notifier.push.get_db", return_value=mock_db):
         await notify_users(bot=mock_bot, hour=8)
 
     mock_bot.send_message.assert_not_called()
@@ -209,10 +193,9 @@ async def test_push_notification_text_is_energetic():
     mock_db.get_users_for_hour.return_value = [
         {"user_id": 111, "preferred_city": "all"}
     ]
-    mock_db.get_events.return_value = _OPEN_EVENTS
+    mock_db.get_open_events.return_value = _OPEN_EVENTS
 
     with (
-        patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
         patch("src.notifier.push.get_db", return_value=mock_db),
         patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
     ):

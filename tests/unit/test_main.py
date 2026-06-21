@@ -73,7 +73,7 @@ async def test_api_events_button_url_uses_official_url():
         url="https://running.biji.co/index.php?q=competition&act=info&cid=13072",
     )
     mock_db = MagicMock()
-    mock_db.get_events.return_value = [event]
+    mock_db.get_open_events.return_value = [event]
 
     with (
         patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "test_token"}),
@@ -100,7 +100,7 @@ async def test_api_events_button_url_never_contains_running_biji():
         url="https://running.biji.co/index.php?q=competition&act=info&cid=9999",
     )
     mock_db = MagicMock()
-    mock_db.get_events.return_value = [event]
+    mock_db.get_open_events.return_value = [event]
 
     with (
         patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "test_token"}),

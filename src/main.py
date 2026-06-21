@@ -37,11 +37,6 @@ from src.bot.handlers import (
 from src.bot.webapp_api import validate_init_data
 from src.notifier.push import notify_users
 from src.scraper.crawler import crawl_and_store
-from src.scraper.running_biji import (
-    filter_events_by_city,
-    filter_open_events,
-    filter_upcoming_events,
-)
 from src.utils import tw_today
 
 logging.basicConfig(
@@ -161,14 +156,13 @@ async def api_events() -> Response:
     event_type = request.args.get("type", "open")
     city = request.args.get("city", "all")
 
-    events = get_db().get_events()
+    db = get_db()
     today = tw_today()
-    filtered = (
-        filter_upcoming_events(events, today)
+    events = (
+        db.get_upcoming_events(city, today)
         if event_type == "upcoming"
-        else filter_open_events(events, today)
+        else db.get_open_events(city, today)
     )
-    city_events = filter_events_by_city(filtered, city)
 
     result = [
         {
@@ -183,7 +177,7 @@ async def api_events() -> Response:
             "organizer": e.organizer,
             "categories": e.categories,
         }
-        for e in city_events
+        for e in events
     ]
     return Response(
         json.dumps({"events": result}, ensure_ascii=False),
