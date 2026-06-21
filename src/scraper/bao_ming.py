@@ -9,7 +9,7 @@ import requests
 from bs4 import BeautifulSoup, Tag
 
 from src.scraper.city_resolver import resolve_city
-from src.scraper.running_biji import RaceEvent, extract_og_image
+from src.scraper.running_biji import CATEGORY_KEYWORDS, RaceEvent, extract_og_image
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ def _event_name(soup: BeautifulSoup) -> str:
 
 
 def _extract_categories(soup: BeautifulSoup) -> list[str]:
-    """從「組別」表頭行取出各報名組別名稱。"""
+    """從「組別」表頭行取出含距離關鍵字的報名組別名稱。"""
     for table in soup.find_all("table"):
         if not isinstance(table, Tag):
             continue
@@ -111,7 +111,7 @@ def _extract_categories(soup: BeautifulSoup) -> list[str]:
                 if isinstance(c, Tag)
             ]
             if cells and cells[0] == "組別":
-                return [c for c in cells[1:] if c]
+                return [c for c in cells[1:] if c and CATEGORY_KEYWORDS.search(c)]
     return []
 
 

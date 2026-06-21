@@ -124,3 +124,15 @@ def test_extract_categories_ignores_組別_header_cell():
     cats = _extract_categories(soup)
     assert "組別" not in cats
     assert "全馬" in cats
+
+
+def test_extract_categories_filters_non_distance_text():
+    """年齡分組、行銷文案等非距離型組別不應出現在結果裡。"""
+    from bs4 import BeautifulSoup
+
+    html = "<table><tr><td>組別</td><td>42K全馬</td><td>65歲以上分齡</td><td>行銷推廣組</td></tr></table>"
+    soup = BeautifulSoup(html, "html.parser")
+    cats = _extract_categories(soup)
+    assert "42K全馬" in cats
+    assert "65歲以上分齡" not in cats
+    assert "行銷推廣組" not in cats

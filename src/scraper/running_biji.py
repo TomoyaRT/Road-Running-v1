@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from urllib.parse import urljoin
@@ -8,6 +9,10 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup, Tag
 
 logger = logging.getLogger(__name__)
+
+CATEGORY_KEYWORDS = re.compile(
+    r"公里|[Kk][Mm]|\d+[Kk]|馬拉松|全馬|半馬|路跑|接力|全程|半程|越野"
+)
 
 _NON_RUNNING_KEYWORDS = (
     "自行車",

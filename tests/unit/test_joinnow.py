@@ -9,7 +9,6 @@ from src.scraper.joinnow import (
     _parse_event_urls,
     fetch_events,
 )
-
 from src.scraper.running_biji import RaceEvent
 
 # ── HTML fixtures ──────────────────────────────────────────────────────────────
@@ -174,6 +173,21 @@ def test_parse_categories_returns_empty_when_no_table():
 
     soup = BeautifulSoup("<p>無組別</p>", "html.parser")
     assert _parse_categories(soup) == []
+
+
+def test_parse_categories_filters_non_distance_text():
+    """非距離型項目（親子同樂VIP等）不應出現在結果裡。"""
+    from bs4 import BeautifulSoup
+
+    html = """<table>
+      <tr><th>項目</th><th>費用</th></tr>
+      <tr><td>半馬組21Km</td><td>800</td></tr>
+      <tr><td>親子同樂VIP體驗</td><td>500</td></tr>
+    </table>"""
+    soup = BeautifulSoup(html, "html.parser")
+    cats = _parse_categories(soup)
+    assert "半馬組21Km" in cats
+    assert "親子同樂VIP體驗" not in cats
 
 
 # ── fetch_events ──────────────────────────────────────────────────────────────

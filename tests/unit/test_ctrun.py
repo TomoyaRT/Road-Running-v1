@@ -140,3 +140,15 @@ def test_extract_categories_returns_empty_when_no_table():
 
     soup = BeautifulSoup("<html><body><p>無組別</p></body></html>", "html.parser")
     assert _extract_categories(soup) == []
+
+
+def test_extract_categories_filters_non_distance_text():
+    """年齡分組、行銷文案等非距離型組別不應出現在結果裡。"""
+    from bs4 import BeautifulSoup
+
+    html = "<table><tr><td>組別</td><td>21公里半馬</td><td>未滿18歲組</td><td>VIP紀念組</td></tr></table>"
+    soup = BeautifulSoup(html, "html.parser")
+    cats = _extract_categories(soup)
+    assert "21公里半馬" in cats
+    assert "未滿18歲組" not in cats
+    assert "VIP紀念組" not in cats

@@ -9,7 +9,7 @@ import requests
 from bs4 import BeautifulSoup, Tag
 
 from src.scraper.city_resolver import resolve_city
-from src.scraper.running_biji import RaceEvent
+from src.scraper.running_biji import CATEGORY_KEYWORDS, RaceEvent
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,11 @@ def _parse_row(row: Tag) -> RaceEvent | None:
         return None
     location = cells[4].get_text(strip=True)
     cats_text = cells[5].get_text(strip=True)
-    categories = [c.strip() for c in re.split(r"/(?![^(]*\))", cats_text) if c.strip()]
+    categories = [
+        c.strip()
+        for c in re.split(r"/(?![^(]*\))", cats_text)
+        if c.strip() and CATEGORY_KEYWORDS.search(c)
+    ]
     return RaceEvent(
         name=name,
         race_date=race_date,

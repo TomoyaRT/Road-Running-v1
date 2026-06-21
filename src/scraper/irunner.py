@@ -8,7 +8,7 @@ import requests
 from bs4 import BeautifulSoup, Tag
 
 from src.scraper.city_resolver import resolve_city
-from src.scraper.running_biji import RaceEvent
+from src.scraper.running_biji import CATEGORY_KEYWORDS, RaceEvent
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,6 @@ _BASE_URL = "https://irunner.biji.co/list"
 _ACTIVITY_BASE = "https://irunner.biji.co/"
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 _REG_TIME_RE = re.compile(r"起(\d{4}-\d{2}-\d{2}).*?迄(\d{4}-\d{2}-\d{2})")
-_CATEGORY_KEYWORDS = re.compile(r"公里|KM|km|馬拉松|路跑|接力|全程|半程|越野")
 
 
 def fetch_events() -> list[RaceEvent]:
@@ -155,7 +154,7 @@ def _parse_categories(soup: BeautifulSoup) -> list[str]:
         text = tag.get_text(strip=True)
         if len(text) < 2 or len(text) > 40:
             continue
-        if _CATEGORY_KEYWORDS.search(text) and text not in seen:
+        if CATEGORY_KEYWORDS.search(text) and text not in seen:
             seen.add(text)
             results.append(text)
     return results

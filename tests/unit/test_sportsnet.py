@@ -242,3 +242,29 @@ def test_parse_events_skips_row_without_link():
     events = _parse_events(_TABLE_WITH_NO_LINK_ROW_HTML)
     assert len(events) == 1
     assert events[0].name == "2026渣打臺北公益馬拉松"
+
+
+_NON_DISTANCE_CATEGORY_HTML = """
+<html><body>
+<table><tr><td>Nav</td></tr></table>
+<table>
+  <tr><th>　</th><th>序</th><th>日期</th><th>活動名稱</th><th>地點</th><th>組別</th></tr>
+  <tr>
+    <td></td><td>1</td><td>06/15(日)</td>
+    <td><a href="http://example.com/">2026測試路跑賽</a></td>
+    <td>台北市信義區</td>
+    <td>10KM / 65歲以上菁英 / 行銷推廣</td>
+  </tr>
+</table>
+</body></html>
+"""
+
+
+def test_parse_event_categories_filters_non_distance():
+    """非距離型組別名稱（年齡分組、行銷文案）不應出現在 categories。"""
+    events = _parse_events(_NON_DISTANCE_CATEGORY_HTML)
+    assert len(events) == 1
+    cats = events[0].categories
+    assert "10KM" in cats
+    assert "65歲以上菁英" not in cats
+    assert "行銷推廣" not in cats

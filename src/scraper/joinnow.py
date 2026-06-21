@@ -8,7 +8,7 @@ import requests
 from bs4 import BeautifulSoup, Tag
 
 from src.scraper.city_resolver import resolve_city
-from src.scraper.running_biji import RaceEvent
+from src.scraper.running_biji import CATEGORY_KEYWORDS, RaceEvent
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ def _parse_first_date(text: str) -> date | None:
 
 
 def _parse_categories(soup: BeautifulSoup) -> list[str]:
-    """從「項目」表頭行取出報名組別（第一欄，跳過標題行）。"""
+    """從「項目」表頭行取出含距離關鍵字的報名組別（第一欄，跳過標題行）。"""
     for table in soup.find_all("table"):
         if not isinstance(table, Tag):
             continue
@@ -145,7 +145,7 @@ def _parse_categories(soup: BeautifulSoup) -> list[str]:
             cell = row.find(["td", "th"])
             if isinstance(cell, Tag):
                 text = cell.get_text(strip=True)
-                if text:
+                if text and CATEGORY_KEYWORDS.search(text):
                     results.append(text)
         return results
     return []
