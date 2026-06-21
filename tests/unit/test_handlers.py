@@ -7,6 +7,8 @@ import pytest
 from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 from src.bot.handlers import (
+    PERSISTENT_KEYBOARD,
+    WELCOME_TEXT,
     build_hour_keyboard,
     build_region_keyboard,
     build_region_only_keyboard,
@@ -199,8 +201,7 @@ async def test_city_callback_shows_confirmation_for_returning_subscriber(
     text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
     assert "09:00" in text
     assert "台北市" in text
-    assert "設定完成" in text
-    assert "感謝" not in text
+    assert "搞定" in text
 
 
 @pytest.mark.asyncio
@@ -217,7 +218,7 @@ async def test_city_callback_shows_thank_you_for_new_subscriber(
     text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
     assert "09:00" in text
     assert "台北市" in text
-    assert "感謝" in text
+    assert "開跑" in text
 
 
 # ── open_settings_callback ─────────────────────────────────────────────────────
@@ -439,7 +440,7 @@ def _mock_db_city(city: str = "all") -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_handle_text_open_events_sends_webapp_button(mock_update, mock_context):
-    mock_update.message.text = "查詢可報名活動"
+    mock_update.message.text = "🔥 可報名賽事"
 
     with (
         patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
@@ -463,7 +464,7 @@ async def test_handle_text_open_events_includes_user_city_in_url(
     """查詢時 mini app URL 應帶入使用者已設定的城市（URL-encoded）。"""
     from urllib.parse import quote
 
-    mock_update.message.text = "查詢可報名活動"
+    mock_update.message.text = "🔥 可報名賽事"
 
     with (
         patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
@@ -485,7 +486,7 @@ async def test_handle_text_open_events_includes_user_city_in_url(
 @pytest.mark.asyncio
 async def test_handle_text_open_events_city_defaults_to_all(mock_update, mock_context):
     """未設定地區時 city=all 應出現在 URL 中。"""
-    mock_update.message.text = "查詢可報名活動"
+    mock_update.message.text = "🔥 可報名賽事"
 
     with (
         patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
@@ -508,7 +509,7 @@ async def test_handle_text_open_events_city_defaults_to_all(mock_update, mock_co
 async def test_handle_text_upcoming_events_sends_webapp_button(
     mock_update, mock_context
 ):
-    mock_update.message.text = "即將開放活動"
+    mock_update.message.text = "⏳ 即將開放"
 
     with (
         patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
@@ -533,7 +534,7 @@ async def test_handle_text_upcoming_events_includes_user_city_in_url(
     """即將開放活動查詢 URL 也應帶城市。"""
     from urllib.parse import quote
 
-    mock_update.message.text = "即將開放活動"
+    mock_update.message.text = "⏳ 即將開放"
 
     with (
         patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
@@ -554,7 +555,7 @@ async def test_handle_text_upcoming_events_includes_user_city_in_url(
 
 @pytest.mark.asyncio
 async def test_handle_text_settings_shows_settings_keyboard(mock_update, mock_context):
-    mock_update.message.text = "設定"
+    mock_update.message.text = "⚙️ 設定"
     await handle_text_message(mock_update, mock_context)
 
     mock_update.message.reply_text.assert_called_once()
@@ -666,7 +667,7 @@ def test_build_slot_keyboard_covers_all_slots():
 def test_build_region_keyboard_contains_all_regions():
     markup = build_region_keyboard(hour=9)
     all_labels = [btn.text for row in markup.inline_keyboard for btn in row]
-    for label in ["北部", "中部", "南部", "東部", "離島", "不限地區"]:
+    for label in ["北部", "中部", "南部", "東部", "離島", "全部地區"]:
         assert label in all_labels
 
 
@@ -704,7 +705,7 @@ def test_build_settings_keyboard_has_time_city_and_unsubscribe():
 def test_build_region_only_keyboard_contains_all_regions():
     markup = build_region_only_keyboard()
     all_labels = [btn.text for row in markup.inline_keyboard for btn in row]
-    for label in ["北部", "中部", "南部", "東部", "離島", "不限地區"]:
+    for label in ["北部", "中部", "南部", "東部", "離島", "全部地區"]:
         assert label in all_labels
 
 
@@ -742,3 +743,109 @@ async def test_region_only_callback_shows_south_cities(
     assert "台南市" in all_labels
     all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
     assert all(d.startswith("city_only:") for d in all_data)
+
+
+# ── T0 copy 驗證 ───────────────────────────────────────────────────────────────
+
+
+def test_persistent_keyboard_has_energetic_button_labels():
+    """PERSISTENT_KEYBOARD 按鈕文字須使用活潑語氣版本。"""
+    all_texts = [btn.text for row in PERSISTENT_KEYBOARD.keyboard for btn in row]
+    assert "🔥 可報名賽事" in all_texts
+    assert "⏳ 即將開放" in all_texts
+    assert "⚙️ 設定" in all_texts
+
+
+def test_welcome_text_is_energetic():
+    """歡迎文字須包含熱血語氣。"""
+    assert "開跑" in WELCOME_TEXT or "🔥" in WELCOME_TEXT
+
+
+@pytest.mark.asyncio
+async def test_handle_text_routes_new_open_button(mock_update, mock_context):
+    """新按鈕文字『🔥 可報名賽事』須正確觸發開放活動查詢。"""
+    mock_update.message.text = "🔥 可報名賽事"
+
+    with (
+        patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
+        patch("src.bot.handlers.get_db", return_value=_mock_db_city()),
+    ):
+        await handle_text_message(mock_update, mock_context)
+
+    mock_update.message.reply_text.assert_called_once()
+    markup = mock_update.message.reply_text.call_args.kwargs.get("reply_markup")
+    assert isinstance(markup, InlineKeyboardMarkup)
+    buttons = [btn for row in markup.inline_keyboard for btn in row]
+    assert any(
+        btn.web_app is not None and "type=open" in btn.web_app.url for btn in buttons
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_text_routes_new_upcoming_button(mock_update, mock_context):
+    """新按鈕文字『⏳ 即將開放』須正確觸發即將開放查詢。"""
+    mock_update.message.text = "⏳ 即將開放"
+
+    with (
+        patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
+        patch("src.bot.handlers.get_db", return_value=_mock_db_city()),
+    ):
+        await handle_text_message(mock_update, mock_context)
+
+    mock_update.message.reply_text.assert_called_once()
+    markup = mock_update.message.reply_text.call_args.kwargs.get("reply_markup")
+    assert isinstance(markup, InlineKeyboardMarkup)
+    buttons = [btn for row in markup.inline_keyboard for btn in row]
+    assert any(
+        btn.web_app is not None and "type=upcoming" in btn.web_app.url
+        for btn in buttons
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_text_routes_new_settings_button(mock_update, mock_context):
+    """新按鈕文字『⚙️ 設定』須正確觸發設定選單。"""
+    mock_update.message.text = "⚙️ 設定"
+    await handle_text_message(mock_update, mock_context)
+
+    mock_update.message.reply_text.assert_called_once()
+    markup = mock_update.message.reply_text.call_args.kwargs.get("reply_markup")
+    assert isinstance(markup, InlineKeyboardMarkup)
+    all_data = [
+        btn.callback_data
+        for row in markup.inline_keyboard
+        for btn in row
+        if btn.callback_data
+    ]
+    assert "settings_time" in all_data
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_btn_shows_comeback_message(
+    mock_callback_update, mock_context
+):
+    """取消訂閱後文案須引導使用者日後回來。"""
+    mock_callback_update.callback_query.data = "unsubscribe_btn"
+    mock_db = MagicMock()
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await unsubscribe_btn_callback(mock_callback_update, mock_context)
+
+    text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
+    assert "再回來" in text
+
+
+@pytest.mark.asyncio
+async def test_city_callback_new_subscriber_energetic_copy(
+    mock_callback_update, mock_context
+):
+    """首次訂閱確認訊息須有熱血語氣關鍵字（開跑或 🔥）。"""
+    mock_callback_update.callback_query.data = "city:9:台北市"
+    mock_db = MagicMock()
+    mock_db.subscribe.return_value = True
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await city_callback(mock_callback_update, mock_context)
+
+    text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
+    assert "開跑" in text or "🔥" in text

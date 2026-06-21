@@ -196,3 +196,27 @@ async def test_notify_users_queries_correct_hour():
         await notify_users(bot=mock_bot, hour=20)
 
     mock_db.get_users_for_hour.assert_called_once_with(hour=20)
+
+
+# ── T0 copy 驗證 ───────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_push_notification_text_is_energetic():
+    """推播文案須使用活潑熱血語氣（含 🔥 或「熱血」或「開跑」）。"""
+    mock_bot = AsyncMock()
+    mock_db = MagicMock()
+    mock_db.get_users_for_hour.return_value = [
+        {"user_id": 111, "preferred_city": "all"}
+    ]
+    mock_db.get_events.return_value = _OPEN_EVENTS
+
+    with (
+        patch("src.notifier.push.filter_open_events", return_value=_OPEN_EVENTS),
+        patch("src.notifier.push.get_db", return_value=mock_db),
+        patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
+    ):
+        await notify_users(bot=mock_bot, hour=8)
+
+    text = mock_bot.send_message.call_args.kwargs["text"]
+    assert "🔥" in text or "熱血" in text or "開跑" in text

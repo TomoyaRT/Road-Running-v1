@@ -25,7 +25,7 @@
       overflow: hidden;
     }
 
-    #loading, #error {
+    #loading, #error, #empty {
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -34,6 +34,8 @@
       gap: 12px;
       color: var(--hint);
       font-size: 15px;
+      text-align: center;
+      padding: 0 24px;
     }
 
     .spinner {
@@ -178,8 +180,9 @@
   </style>
 </head>
 <body>
-  <div id="loading"><div class="spinner"></div><span>載入中…</span></div>
-  <div id="error" style="display:none">暫無活動資料</div>
+  <div id="loading"><div class="spinner"></div><span>賽事載入中…🏃</span></div>
+  <div id="error" style="display:none">載入失敗了，喘口氣再試一次 🙏</div>
+  <div id="empty" style="display:none"></div>
 
   <div id="wrapper">
     <div class="counter-bar" id="counter"></div>
@@ -211,10 +214,10 @@
       document.getElementById('loading').style.display = 'none';
 
       if (!events || events.length === 0) {
-        const el = document.getElementById('error');
+        const el = document.getElementById('empty');
         el.textContent = type === 'upcoming'
-          ? '目前 30 天內沒有即將開放報名的活動'
-          : '目前沒有可報名的路跑活動';
+          ? '近 30 天還沒有即將開放的賽事 ⏳\n有新消息會第一時間推給你！'
+          : '目前還沒有開放報名的賽事 🏃\n別急，一開放馬上通知你！';
         el.style.display = 'flex';
         return;
       }
@@ -236,15 +239,24 @@
           ? `<span class="city-badge">${esc(e.city)}</span>`
           : '';
 
-        const catHtml = (e.categories && e.categories.length > 0)
-          ? `<div class="detail-item">
+        const catValue = (e.categories && e.categories.length > 0)
+          ? esc(e.categories.join(' / '))
+          : '組別待公布，鎖定官網！';
+        const catHtml = `<div class="detail-item">
                <span class="detail-label">報名組別</span>
-               <span class="detail-value">${esc(e.categories.join(' / '))}</span>
-             </div>`
-          : '';
+               <span class="detail-value">${catValue}</span>
+             </div>`;
 
-        const regStart = e.reg_start || '?';
-        const regEnd = e.reg_end || '?';
+        let regText;
+        if (!e.reg_start && !e.reg_end) {
+          regText = '開放報名中，詳情看官網 🔥';
+        } else if (e.reg_start && !e.reg_end) {
+          regText = `${esc(e.reg_start)} 起開放報名`;
+        } else {
+          regText = `${esc(e.reg_start || '待公布')} ～ ${esc(e.reg_end)}`;
+        }
+
+        const locationValue = e.location ? esc(e.location) : '地點待公布，鎖定官網！';
 
         card.innerHTML = `
           ${imgHtml}
@@ -258,15 +270,15 @@
             <div class="details">
               <div class="detail-item">
                 <span class="detail-label">報名時間</span>
-                <span class="detail-value">${esc(regStart)} ～ ${esc(regEnd)}</span>
+                <span class="detail-value">${regText}</span>
               </div>
               <div class="detail-item">
                 <span class="detail-label">活動地點</span>
-                <span class="detail-value">${esc(e.location)}</span>
+                <span class="detail-value">${locationValue}</span>
               </div>
               ${catHtml}
             </div>
-            <a class="reg-btn" href="${safeUrl(e.url)}" target="_blank">立刻報名</a>
+            <a class="reg-btn" href="${safeUrl(e.url)}" target="_blank">🔥 立刻報名</a>
           </div>
         `;
         carousel.appendChild(card);

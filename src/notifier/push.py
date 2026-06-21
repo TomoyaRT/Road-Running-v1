@@ -46,12 +46,12 @@ async def _notify_one_user(
 ) -> None:
     label = "全台灣" if city == "all" else city
     text = (
-        f"🏃 早安！{label}目前有 {len(events)} 場可報名的路跑活動，\n"
-        "點下方按鈕瀏覽，把握報名時間別錯過！"
+        f"熱血開跑！🔥 {label}現在有 {len(events)} 場賽事開放報名，\n"
+        "點下方按鈕，手刀搶名額別錯過 🏃‍♂️"
     )
     webapp_url = f"{_get_cloud_run_url()}/webapp?type=open&city={quote(city)}"
     markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("瀏覽可報名活動", web_app=WebAppInfo(url=webapp_url))]]
+        [[InlineKeyboardButton("🔥 手刀搶賽事", web_app=WebAppInfo(url=webapp_url))]]
     )
     try:
         await bot.send_message(chat_id=uid, text=text, reply_markup=markup)

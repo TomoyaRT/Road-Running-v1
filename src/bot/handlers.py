@@ -46,22 +46,22 @@ _REGIONS: dict[str, tuple[str, list[str]]] = {
 
 PERSISTENT_KEYBOARD = ReplyKeyboardMarkup(
     [
-        [KeyboardButton("查詢可報名活動"), KeyboardButton("即將開放活動")],
-        [KeyboardButton("設定")],
+        [KeyboardButton("🔥 可報名賽事"), KeyboardButton("⏳ 即將開放")],
+        [KeyboardButton("⚙️ 設定")],
     ],
     resize_keyboard=True,
     is_persistent=True,
 )
 
 WELCOME_TEXT = (
-    "歡迎加入台灣路跑通知！\n\n"
-    "我每天在你指定的時間推播目前可以報名的路跑活動，讓你不錯過任何賽事。\n\n"
-    "你也可以隨時用下方按鈕查詢最新活動或修改通知設定。"
+    "歡迎加入台灣路跑通知！🏃‍♂️🔥\n\n"
+    "準備好開跑了嗎？每天在你設定的時間，幫你抓出最新開放報名的賽事，一場都不放過！\n\n"
+    "用下方按鈕，隨時查活動或改設定 💪"
 )
 
-_ASK_SLOT_TEXT = "請選擇你希望每天收到路跑活動通知的時段："
-_ASK_CITY_TEXT = "請選擇你希望收到哪個地區的路跑活動通知："
-_ASK_SETTINGS_TEXT = "請選擇設定項目："
+_ASK_SLOT_TEXT = "想在每天哪個時段收到賽事通知？選一個吧 ⏰"
+_ASK_CITY_TEXT = "想追哪個地區的賽事？選你的主場 📍"
+_ASK_SETTINGS_TEXT = "想調整什麼？⚙️"
 
 
 def get_db() -> FirestoreClient:
@@ -134,7 +134,7 @@ def build_region_keyboard(hour: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("東部", callback_data=f"region:{hour}:east"),
                 InlineKeyboardButton("離島", callback_data=f"region:{hour}:island"),
             ],
-            [InlineKeyboardButton("不限地區", callback_data=f"city:{hour}:all")],
+            [InlineKeyboardButton("全部地區", callback_data=f"city:{hour}:all")],
         ]
     )
 
@@ -151,7 +151,7 @@ def build_region_only_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("東部", callback_data="region_only:east"),
                 InlineKeyboardButton("離島", callback_data="region_only:island"),
             ],
-            [InlineKeyboardButton("不限地區", callback_data="city_only:all")],
+            [InlineKeyboardButton("全部地區", callback_data="city_only:all")],
         ]
     )
 
@@ -186,8 +186,8 @@ def build_settings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("修改推播時間", callback_data="settings_time"),
-                InlineKeyboardButton("修改推播地區", callback_data="settings_city"),
+                InlineKeyboardButton("⏰ 改時間", callback_data="settings_time"),
+                InlineKeyboardButton("📍 改地區", callback_data="settings_city"),
             ],
             [InlineKeyboardButton("取消訂閱", callback_data="unsubscribe_btn")],
         ]
@@ -199,9 +199,7 @@ def _city_display(city: str) -> str:
 
 
 def _settings_confirmation(hour: int, city: str) -> str:
-    return (
-        f"設定完成！每天 {hour:02d}:00 推播 {_city_display(city)} 可報名路跑活動給你。"
-    )
+    return f"搞定！每天 {hour:02d}:00 幫你追 {_city_display(city)} 的最新賽事 🔥"
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -218,7 +216,7 @@ async def slot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     slot = query.data.split(":", 1)[1]
     label = _SLOT_LABELS.get(slot, slot)
     await query.edit_message_text(
-        f"你選擇了「{label}」，請選擇具體的推播時間：",
+        f"{label} 收到！再選個準確時間 ⏰",
         reply_markup=build_hour_keyboard(slot),
     )
 
@@ -231,7 +229,7 @@ async def hour_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await query.answer()
     hour = int(query.data.split(":", 1)[1])
     await query.edit_message_text(
-        f"你選擇了每天 {hour:02d}:00 接收通知。\n\n{_ASK_CITY_TEXT}",
+        f"每天 {hour:02d}:00 準時叫你開跑 🏃\n\n{_ASK_CITY_TEXT}",
         reply_markup=build_region_keyboard(hour),
     )
 
@@ -256,12 +254,12 @@ async def city_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     city_label = _city_display(city)
     if is_new:
         msg = (
-            f"🎉 設定完成囉！感謝你加入台灣路跑通知 🏃\n\n"
-            f"從今天起，我會在每天 {hour:02d}:00 把 {city_label} 最新可報名的路跑活動送到你眼前，讓你不錯過任何賽事。\n\n"
-            f"祝你跑得開心、賽事連連 💪"
+            f"設定完成，準備開跑！🔥\n\n"
+            f"從今天起，每天 {hour:02d}:00 把 {city_label} 最新可報名的賽事送到你面前，一場都不錯過 🏃‍♂️\n\n"
+            f"衝吧，賽事連連 💪"
         )
     else:
-        msg = f"設定完成！每天 {hour:02d}:00 推播 {city_label} 可報名路跑活動給你。"
+        msg = _settings_confirmation(hour, city)
     await query.edit_message_text(msg)
 
 
@@ -298,7 +296,7 @@ async def slot_time_callback(
     slot = query.data.split(":", 1)[1]
     label = _SLOT_LABELS.get(slot, slot)
     await query.edit_message_text(
-        f"你選擇了「{label}」，請選擇具體的推播時間：",
+        f"{label} 收到！再選個準確時間 ⏰",
         reply_markup=build_hour_keyboard_t(slot),
     )
 
@@ -342,7 +340,7 @@ async def region_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     region_key = parts[2]
     region_label, _ = _REGIONS[region_key]
     await query.edit_message_text(
-        f"「{region_label}」有以下縣市，請選擇：",
+        f"{region_label} 有這些縣市，挑你的主場 📍",
         reply_markup=build_city_keyboard_for_region(region_key, hour),
     )
 
@@ -358,7 +356,7 @@ async def region_only_callback(
     region_key = query.data.split(":", 1)[1]
     region_label, _ = _REGIONS[region_key]
     await query.edit_message_text(
-        f"「{region_label}」有以下縣市，請選擇：",
+        f"{region_label} 有這些縣市，挑你的主場 📍",
         reply_markup=build_city_only_keyboard_for_region(region_key),
     )
 
@@ -380,7 +378,7 @@ async def city_only_callback(
     msg = (
         _settings_confirmation(hour, city)
         if hour is not None
-        else f"已更新！將推播 {_city_display(city)} 的路跑活動給你。"
+        else f"更新好了！接下來幫你追 {_city_display(city)} 的賽事 🔥"
     )
     await query.edit_message_text(msg)
 
@@ -396,7 +394,7 @@ async def unsubscribe_btn_callback(
 
     db = get_db()
     db.unsubscribe(user_id=update.effective_user.id)
-    await query.edit_message_text("已取消訂閱，不再推播路跑通知。")
+    await query.edit_message_text("已取消訂閱，隨時想跑再回來找我 👋")
 
 
 async def handle_text_message(
@@ -404,11 +402,11 @@ async def handle_text_message(
 ) -> None:
     assert update.message is not None
     text = update.message.text
-    if text == "查詢可報名活動":
+    if text == "🔥 可報名賽事":
         await _handle_open_events(update, context)
-    elif text == "即將開放活動":
+    elif text == "⏳ 即將開放":
         await _handle_upcoming_events(update, context)
-    elif text == "設定":
+    elif text == "⚙️ 設定":
         await update.message.reply_text(
             _ASK_SETTINGS_TEXT, reply_markup=build_settings_keyboard()
         )
@@ -429,12 +427,12 @@ async def _handle_open_events(
     cloud_run_url = _get_cloud_run_url()
     city = get_db().get_user_city(update.effective_user.id)
     await update.message.reply_text(
-        "點擊下方按鈕瀏覽目前可報名的路跑活動：",
+        "點下方按鈕，看看現在能報哪些賽事 🔥",
         reply_markup=InlineKeyboardMarkup(
             [
                 [
                     InlineKeyboardButton(
-                        "瀏覽可報名活動",
+                        "🔥 開始瀏覽賽事",
                         web_app=WebAppInfo(
                             url=f"{cloud_run_url}/webapp?type=open&city={quote(city)}"
                         ),
@@ -453,12 +451,12 @@ async def _handle_upcoming_events(
     cloud_run_url = _get_cloud_run_url()
     city = get_db().get_user_city(update.effective_user.id)
     await update.message.reply_text(
-        "點擊下方按鈕瀏覽 30 天內即將開放報名的活動：",
+        "點下方按鈕，搶先看 30 天內即將開放的賽事 ⏳",
         reply_markup=InlineKeyboardMarkup(
             [
                 [
                     InlineKeyboardButton(
-                        "瀏覽即將開放活動",
+                        "⏳ 看即將開放",
                         web_app=WebAppInfo(
                             url=f"{cloud_run_url}/webapp?type=upcoming&city={quote(city)}"
                         ),
@@ -476,4 +474,4 @@ async def unsubscribe_command(
     assert update.effective_user is not None
     db = get_db()
     db.unsubscribe(user_id=update.effective_user.id)
-    await update.message.reply_text("已取消訂閱，不再推播路跑通知。")
+    await update.message.reply_text("已取消訂閱，隨時想跑再回來找我 👋")
