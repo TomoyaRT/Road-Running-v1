@@ -38,6 +38,8 @@
       padding: 0 24px;
     }
 
+    #empty { white-space: pre-line; }
+
     .spinner {
       width: 32px; height: 32px;
       border: 3px solid var(--secondary-bg);
@@ -95,12 +97,31 @@
       overflow-y: auto;
     }
 
-    .card-img {
-      width: 100%;
+    /* ── Card image (blurred-background + contain foreground) ─── */
+    .card-img-wrap {
+      position: relative;
       height: 200px;
-      object-fit: cover;
-      flex-shrink: 0;
+      overflow: hidden;
       background: var(--secondary-bg);
+      flex-shrink: 0;
+    }
+
+    .card-img-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: blur(20px) brightness(0.6);
+      transform: scale(1.1);
+    }
+
+    .card-img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
     }
 
     .card-body {
@@ -231,8 +252,12 @@
         const card = document.createElement('div');
         card.className = 'card';
 
-        const imgHtml = e.image_url
-          ? `<img class="card-img" src="${safeUrl(e.image_url)}" alt="" loading="lazy">`
+        const imgSrc = e.image_url ? safeUrl(e.image_url) : '';
+        const imgHtml = imgSrc
+          ? `<div class="card-img-wrap">
+               <img class="card-img-bg" src="${imgSrc}" alt="" aria-hidden="true" loading="lazy">
+               <img class="card-img" src="${imgSrc}" alt="" loading="lazy">
+             </div>`
           : '';
 
         const cityHtml = e.city
