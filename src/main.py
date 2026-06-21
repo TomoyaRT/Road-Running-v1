@@ -175,7 +175,7 @@ async def api_events() -> Response:
             "name": e.name,
             "race_date": e.race_date.isoformat(),
             "location": e.location,
-            "url": e.url,
+            "url": e.official_url or e.url,
             "reg_start": e.reg_start.isoformat() if e.reg_start else None,
             "reg_end": e.reg_end.isoformat() if e.reg_end else None,
             "city": e.city,
