@@ -155,6 +155,32 @@ def test_update_city_uses_correct_document(db, mock_firestore):
     mock_firestore.collection.return_value.document.assert_called_with("456")
 
 
+# ── get_user_city ─────────────────────────────────────────────────────────────
+
+
+def test_get_user_city_returns_preferred_city(db, mock_firestore):
+    doc_ref = mock_firestore.collection.return_value.document.return_value
+    doc_ref.get.return_value.exists = True
+    doc_ref.get.return_value.to_dict.return_value = {"preferred_city": "台北市"}
+
+    assert db.get_user_city(user_id=123) == "台北市"
+
+
+def test_get_user_city_returns_all_when_user_not_found(db, mock_firestore):
+    doc_ref = mock_firestore.collection.return_value.document.return_value
+    doc_ref.get.return_value.exists = False
+
+    assert db.get_user_city(user_id=999) == "all"
+
+
+def test_get_user_city_returns_all_when_field_missing(db, mock_firestore):
+    doc_ref = mock_firestore.collection.return_value.document.return_value
+    doc_ref.get.return_value.exists = True
+    doc_ref.get.return_value.to_dict.return_value = {"notification_hour": 8}
+
+    assert db.get_user_city(user_id=123) == "all"
+
+
 # ── replace_events / get_events ───────────────────────────────────────────────
 
 

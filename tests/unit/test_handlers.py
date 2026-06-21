@@ -367,11 +367,20 @@ _SAMPLE_EVENTS = [
 ]
 
 
+def _mock_db_city(city: str = "all") -> MagicMock:
+    db = MagicMock()
+    db.get_user_city.return_value = city
+    return db
+
+
 @pytest.mark.asyncio
 async def test_handle_text_open_events_sends_webapp_button(mock_update, mock_context):
     mock_update.message.text = "查詢可報名活動"
 
-    with patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}):
+    with (
+        patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
+        patch("src.bot.handlers.get_db", return_value=_mock_db_city()),
+    ):
         await handle_text_message(mock_update, mock_context)
 
     mock_update.message.reply_text.assert_called_once()
@@ -384,12 +393,63 @@ async def test_handle_text_open_events_sends_webapp_button(mock_update, mock_con
 
 
 @pytest.mark.asyncio
+async def test_handle_text_open_events_includes_user_city_in_url(
+    mock_update, mock_context
+):
+    """查詢時 mini app URL 應帶入使用者已設定的城市（URL-encoded）。"""
+    from urllib.parse import quote
+
+    mock_update.message.text = "查詢可報名活動"
+
+    with (
+        patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
+        patch("src.bot.handlers.get_db", return_value=_mock_db_city("台北市")),
+    ):
+        await handle_text_message(mock_update, mock_context)
+
+    buttons = [
+        btn
+        for row in mock_update.message.reply_text.call_args.kwargs[
+            "reply_markup"
+        ].inline_keyboard
+        for btn in row
+    ]
+    urls = [btn.web_app.url for btn in buttons if btn.web_app]
+    assert any(quote("台北市") in url for url in urls)
+
+
+@pytest.mark.asyncio
+async def test_handle_text_open_events_city_defaults_to_all(mock_update, mock_context):
+    """未設定地區時 city=all 應出現在 URL 中。"""
+    mock_update.message.text = "查詢可報名活動"
+
+    with (
+        patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
+        patch("src.bot.handlers.get_db", return_value=_mock_db_city("all")),
+    ):
+        await handle_text_message(mock_update, mock_context)
+
+    buttons = [
+        btn
+        for row in mock_update.message.reply_text.call_args.kwargs[
+            "reply_markup"
+        ].inline_keyboard
+        for btn in row
+    ]
+    urls = [btn.web_app.url for btn in buttons if btn.web_app]
+    assert any("city=all" in url for url in urls)
+
+
+@pytest.mark.asyncio
 async def test_handle_text_upcoming_events_sends_webapp_button(
     mock_update, mock_context
 ):
     mock_update.message.text = "即將開放活動"
 
-    with patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}):
+    with (
+        patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
+        patch("src.bot.handlers.get_db", return_value=_mock_db_city()),
+    ):
         await handle_text_message(mock_update, mock_context)
 
     mock_update.message.reply_text.assert_called_once()
@@ -400,6 +460,32 @@ async def test_handle_text_upcoming_events_sends_webapp_button(
         btn.web_app is not None and "type=upcoming" in btn.web_app.url
         for btn in buttons
     )
+
+
+@pytest.mark.asyncio
+async def test_handle_text_upcoming_events_includes_user_city_in_url(
+    mock_update, mock_context
+):
+    """即將開放活動查詢 URL 也應帶城市。"""
+    from urllib.parse import quote
+
+    mock_update.message.text = "即將開放活動"
+
+    with (
+        patch.dict("os.environ", {"GCP_CLOUD_RUN_URL": "https://test.run.app"}),
+        patch("src.bot.handlers.get_db", return_value=_mock_db_city("高雄市")),
+    ):
+        await handle_text_message(mock_update, mock_context)
+
+    buttons = [
+        btn
+        for row in mock_update.message.reply_text.call_args.kwargs[
+            "reply_markup"
+        ].inline_keyboard
+        for btn in row
+    ]
+    urls = [btn.web_app.url for btn in buttons if btn.web_app]
+    assert any(quote("高雄市") in url for url in urls)
 
 
 @pytest.mark.asyncio

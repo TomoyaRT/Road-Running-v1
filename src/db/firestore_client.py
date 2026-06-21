@@ -77,6 +77,13 @@ class FirestoreClient:
         )
         return is_new
 
+    def get_user_city(self, user_id: int) -> str:
+        """回傳使用者已設定的地區偏好；未訂閱或欄位缺漏時回 'all'。"""
+        doc = self._db.collection(_COLLECTION).document(str(user_id)).get()
+        if not doc.exists:
+            return "all"
+        return str(doc.to_dict().get("preferred_city", "all"))
+
     def update_city(self, user_id: int, preferred_city: str) -> None:
         """只更新城市偏好，不動推播時段。"""
         self._db.collection(_COLLECTION).document(str(user_id)).set(

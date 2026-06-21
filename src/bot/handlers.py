@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from urllib.parse import quote
 
 from telegram import (
     InlineKeyboardButton,
@@ -354,7 +355,9 @@ async def _handle_open_events(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     assert update.message is not None
+    assert update.effective_user is not None
     cloud_run_url = _get_cloud_run_url()
+    city = get_db().get_user_city(update.effective_user.id)
     await update.message.reply_text(
         "點擊下方按鈕瀏覽目前可報名的路跑活動：",
         reply_markup=InlineKeyboardMarkup(
@@ -362,7 +365,9 @@ async def _handle_open_events(
                 [
                     InlineKeyboardButton(
                         "瀏覽可報名活動",
-                        web_app=WebAppInfo(url=f"{cloud_run_url}/webapp?type=open"),
+                        web_app=WebAppInfo(
+                            url=f"{cloud_run_url}/webapp?type=open&city={quote(city)}"
+                        ),
                     )
                 ]
             ]
@@ -374,7 +379,9 @@ async def _handle_upcoming_events(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     assert update.message is not None
+    assert update.effective_user is not None
     cloud_run_url = _get_cloud_run_url()
+    city = get_db().get_user_city(update.effective_user.id)
     await update.message.reply_text(
         "點擊下方按鈕瀏覽 30 天內即將開放報名的活動：",
         reply_markup=InlineKeyboardMarkup(
@@ -382,7 +389,9 @@ async def _handle_upcoming_events(
                 [
                     InlineKeyboardButton(
                         "瀏覽即將開放活動",
-                        web_app=WebAppInfo(url=f"{cloud_run_url}/webapp?type=upcoming"),
+                        web_app=WebAppInfo(
+                            url=f"{cloud_run_url}/webapp?type=upcoming&city={quote(city)}"
+                        ),
                     )
                 ]
             ]
