@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup, Tag
@@ -62,6 +63,9 @@ def _parse_row(row: Tag) -> RaceEvent | None:
     race_date = _parse_date(cells[2].get_text(strip=True), name)
     if race_date is None:
         return None
+    activity_url = _cell_link(cells[3])
+    if not activity_url:
+        return None
     location = cells[4].get_text(strip=True)
     cats_text = cells[5].get_text(strip=True)
     categories = [c.strip() for c in re.split(r"/(?![^(]*\))", cats_text) if c.strip()]
@@ -69,12 +73,12 @@ def _parse_row(row: Tag) -> RaceEvent | None:
         name=name,
         race_date=race_date,
         location=location,
-        url=_BASE_URL,
+        url=activity_url,
         reg_start=None,
         reg_end=None,
         city=resolve_city(location),
         image_url=None,
-        official_url=_cell_link(cells[3]),
+        official_url=activity_url,
         categories=categories,
         source="sportsnet",
     )
@@ -82,7 +86,9 @@ def _parse_row(row: Tag) -> RaceEvent | None:
 
 def _cell_link(cell: Tag) -> str:
     link = cell.find("a", href=True)
-    return str(link["href"]) if isinstance(link, Tag) else ""
+    if not isinstance(link, Tag):
+        return ""
+    return urljoin(_BASE_URL, str(link["href"]))
 
 
 def _parse_date(date_text: str, event_name: str) -> date | None:

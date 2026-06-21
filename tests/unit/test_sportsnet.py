@@ -3,9 +3,8 @@ from __future__ import annotations
 from datetime import date
 from unittest.mock import MagicMock, patch
 
-from src.scraper.sportsnet import _parse_events, fetch_events
-
 from src.scraper.running_biji import RaceEvent
+from src.scraper.sportsnet import _parse_events, fetch_events
 
 # ── HTML fixtures ──────────────────────────────────────────────────────────────
 
@@ -44,6 +43,28 @@ _TABLE_HTML = """
 """
 
 _NO_TABLE_HTML = "<html><body><p>無賽程</p></body></html>"
+
+# 含一列有日期但無連結的 HTML（用於測試略過無連結活動）
+_TABLE_WITH_NO_LINK_ROW_HTML = """
+<html><body>
+<table><tr><td>Nav</td></tr></table>
+<table>
+  <tr><th>　</th><th>序</th><th>日期</th><th>活動名稱</th><th>地點</th><th>組別</th></tr>
+  <tr>
+    <td></td><td>1</td><td>01/11(日)</td>
+    <td><a href="http://scbmarathon.com/">2026渣打臺北公益馬拉松</a></td>
+    <td>台北市信義區信義路</td>
+    <td>42KM / 21KM</td>
+  </tr>
+  <tr>
+    <td></td><td>2</td><td>06/20(六)</td>
+    <td>2026無連結測試路跑</td>
+    <td>台中市</td>
+    <td>10KM</td>
+  </tr>
+</table>
+</body></html>
+"""
 
 
 # ── _parse_events ─────────────────────────────────────────────────────────────
@@ -190,3 +211,34 @@ def test_fetch_events_returns_events():
 def test_fetch_events_returns_empty_on_failure():
     with patch("src.scraper.sportsnet.requests.get", side_effect=Exception("err")):
         assert fetch_events() == []
+
+
+# ── url correctness (T1 regression guard) ────────────────────────────────────
+
+
+def test_parse_event_url_equals_official_url():
+    """url 與 official_url 必須相同，都指向活動頁（非列表頁）。"""
+    events = _parse_events(_TABLE_HTML)
+    for e in events:
+        assert e.url == e.official_url
+
+
+def test_parse_event_url_is_not_base_schedule_page():
+    """url 不得為 schedule.php 列表頁本身。"""
+    events = _parse_events(_TABLE_HTML)
+    for e in events:
+        assert "schedule.php" not in e.url
+
+
+def test_parse_events_all_urls_unique():
+    """每個活動的 url 必須唯一（確保 Firestore doc-ID 不互撞）。"""
+    events = _parse_events(_TABLE_HTML)
+    urls = [e.url for e in events]
+    assert len(urls) == len(set(urls))
+
+
+def test_parse_events_skips_row_without_link():
+    """有日期但無連結的列應被略過，不產生活動。"""
+    events = _parse_events(_TABLE_WITH_NO_LINK_ROW_HTML)
+    assert len(events) == 1
+    assert events[0].name == "2026渣打臺北公益馬拉松"
