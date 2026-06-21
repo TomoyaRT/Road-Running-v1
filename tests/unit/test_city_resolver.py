@@ -67,3 +67,33 @@ def test_area_only_resolves_to_city():
 
 def test_tainan_area_resolves():
     assert resolve_city("台南市安平區") == "台南市"
+
+
+# ── T2: 場館靜態字典 ──────────────────────────────────────────────────────────
+
+
+def test_venue_大佳河濱公園():
+    """大佳河濱公園（台北市常見路跑場地）不含縣市名，應解析為台北市。"""
+    assert resolve_city("大佳河濱公園蛋型廣場") == "台北市"
+
+
+def test_venue_日月潭():
+    assert resolve_city("日月潭風景區") == "南投縣"
+
+
+def test_venue_墾丁():
+    assert resolve_city("墾丁大街入口") == "屏東縣"
+
+
+def test_venue_太魯閣():
+    assert resolve_city("太魯閣國家公園") == "花蓮縣"
+
+
+def test_venue_still_falls_back_to_city_prefix():
+    """場館字典不影響現有縣市名前綴邏輯。"""
+    assert resolve_city("台北市信義區") == "台北市"
+
+
+def test_venue_still_falls_back_to_area_lookup():
+    """場館字典不影響現有鄉鎮反查邏輯。"""
+    assert resolve_city("竹北市光明路") == "新竹縣"
