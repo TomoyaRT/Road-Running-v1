@@ -18,7 +18,7 @@
 ```
 src/
   bot/         # Telegram handlers, commands, inline keyboards
-  scraper/     # 運動筆記爬蟲
+  scraper/     # 多來源路跑爬蟲（irunner、bao-ming、ctrun、joinnow、sportsnet）
   notifier/    # 通知推播邏輯
   db/          # Firestore client wrapper
   main.py      # Quart app entry point（webhook + scheduler endpoints）
