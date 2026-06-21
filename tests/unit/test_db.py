@@ -181,6 +181,49 @@ def test_get_user_city_returns_all_when_field_missing(db, mock_firestore):
     assert db.get_user_city(user_id=123) == "all"
 
 
+# ── update_hour ───────────────────────────────────────────────────────────────
+
+
+def test_update_hour_saves_only_notification_hour(db, mock_firestore):
+    db.update_hour(user_id=123, notification_hour=9)
+
+    doc_ref = mock_firestore.collection.return_value.document.return_value
+    doc_ref.set.assert_called_once_with({"notification_hour": 9}, merge=True)
+
+
+def test_update_hour_uses_correct_document(db, mock_firestore):
+    db.update_hour(user_id=456, notification_hour=20)
+
+    mock_firestore.collection.assert_called_with("users")
+    mock_firestore.collection.return_value.document.assert_called_with("456")
+
+
+# ── get_notification_hour ─────────────────────────────────────────────────────
+
+
+def test_get_notification_hour_returns_hour(db, mock_firestore):
+    doc_ref = mock_firestore.collection.return_value.document.return_value
+    doc_ref.get.return_value.exists = True
+    doc_ref.get.return_value.to_dict.return_value = {"notification_hour": 9}
+
+    assert db.get_notification_hour(user_id=123) == 9
+
+
+def test_get_notification_hour_returns_none_when_user_not_found(db, mock_firestore):
+    doc_ref = mock_firestore.collection.return_value.document.return_value
+    doc_ref.get.return_value.exists = False
+
+    assert db.get_notification_hour(user_id=999) is None
+
+
+def test_get_notification_hour_returns_none_when_field_missing(db, mock_firestore):
+    doc_ref = mock_firestore.collection.return_value.document.return_value
+    doc_ref.get.return_value.exists = True
+    doc_ref.get.return_value.to_dict.return_value = {"preferred_city": "台北市"}
+
+    assert db.get_notification_hour(user_id=123) is None
+
+
 # ── replace_events / get_events ───────────────────────────────────────────────
 
 

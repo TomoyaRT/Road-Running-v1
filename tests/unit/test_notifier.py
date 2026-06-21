@@ -86,7 +86,8 @@ async def test_notify_users_sends_miniapp_to_each_subscriber():
 
 
 @pytest.mark.asyncio
-async def test_notify_users_miniapp_message_has_settings_button():
+async def test_notify_users_miniapp_message_has_no_settings_button():
+    """推播訊息不應包含 inline「設定」按鈕（設定入口保留在常駐鍵盤）。"""
     mock_bot = AsyncMock()
     mock_db = MagicMock()
     mock_db.get_users_for_hour.return_value = [
@@ -103,7 +104,9 @@ async def test_notify_users_miniapp_message_has_settings_button():
     mock_bot.send_message.assert_called_once()
     buttons = _all_buttons(mock_bot.send_message.call_args.kwargs["reply_markup"])
     assert any(btn.web_app is not None for btn in buttons)
-    assert any(btn.callback_data == "open_settings" for btn in buttons)
+    assert not any(
+        getattr(btn, "callback_data", None) == "open_settings" for btn in buttons
+    )
 
 
 @pytest.mark.asyncio

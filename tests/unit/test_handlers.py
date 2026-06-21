@@ -16,12 +16,14 @@ from src.bot.handlers import (
     city_only_callback,
     handle_text_message,
     hour_callback,
+    hour_time_callback,
     open_settings_callback,
     region_callback,
     region_only_callback,
     settings_city_callback,
     settings_time_callback,
     slot_callback,
+    slot_time_callback,
     start_command,
     unsubscribe_btn_callback,
     unsubscribe_command,
@@ -247,9 +249,10 @@ async def test_open_settings_callback_shows_settings_menu(
 
 
 @pytest.mark.asyncio
-async def test_settings_time_callback_shows_slot_keyboard(
+async def test_settings_time_callback_uses_time_only_keyboard(
     mock_callback_update, mock_context
 ):
+    """修改時間的 slot 按鈕必須用 slot_t: 前綴，不能是 slot:（以區別首次設定流程）。"""
     mock_callback_update.callback_query.data = "settings_time"
     await settings_time_callback(mock_callback_update, mock_context)
 
@@ -257,7 +260,63 @@ async def test_settings_time_callback_shows_slot_keyboard(
     markup = call.kwargs.get("reply_markup")
     assert isinstance(markup, InlineKeyboardMarkup)
     all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
-    assert any(d.startswith("slot:") for d in all_data)
+    assert any(d.startswith("slot_t:") for d in all_data)
+    assert not any(d.startswith("slot:") for d in all_data)
+
+
+# ── slot_time_callback ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_slot_time_callback_shows_hour_t_buttons(
+    mock_callback_update, mock_context
+):
+    """時間修改流程：slot_t: → hour_t: 按鈕（不觸發地區選擇）。"""
+    mock_callback_update.callback_query.data = "slot_t:s1"
+    await slot_time_callback(mock_callback_update, mock_context)
+
+    call = mock_callback_update.callback_query.edit_message_text.call_args
+    markup = call.kwargs.get("reply_markup")
+    assert isinstance(markup, InlineKeyboardMarkup)
+    all_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert any(d.startswith("hour_t:") for d in all_data)
+    assert not any(d.startswith("hour:") for d in all_data)
+
+
+# ── hour_time_callback ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_hour_time_callback_saves_only_hour(mock_callback_update, mock_context):
+    """修改時間只呼叫 update_hour，不呼叫 subscribe（不動地區）。"""
+    mock_callback_update.callback_query.data = "hour_t:9"
+    mock_db = MagicMock()
+    mock_db.get_user_city.return_value = "台北市"
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await hour_time_callback(mock_callback_update, mock_context)
+
+    mock_db.update_hour.assert_called_once_with(
+        user_id=mock_callback_update.effective_user.id, notification_hour=9
+    )
+    mock_db.subscribe.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_hour_time_callback_shows_full_confirmation(
+    mock_callback_update, mock_context
+):
+    """完成訊息須同時包含新時間與既有地區。"""
+    mock_callback_update.callback_query.data = "hour_t:20"
+    mock_db = MagicMock()
+    mock_db.get_user_city.return_value = "高雄市"
+
+    with patch("src.bot.handlers.get_db", return_value=mock_db):
+        await hour_time_callback(mock_callback_update, mock_context)
+
+    text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
+    assert "20:00" in text
+    assert "高雄市" in text
 
 
 # ── settings_city_callback ─────────────────────────────────────────────────────
@@ -284,6 +343,7 @@ async def test_settings_city_callback_shows_city_only_keyboard(
 async def test_city_only_callback_calls_update_city(mock_callback_update, mock_context):
     mock_callback_update.callback_query.data = "city_only:台中市"
     mock_db = MagicMock()
+    mock_db.get_notification_hour.return_value = None
 
     with patch("src.bot.handlers.get_db", return_value=mock_db):
         await city_only_callback(mock_callback_update, mock_context)
@@ -300,6 +360,7 @@ async def test_city_only_callback_does_not_touch_hour(
 ):
     mock_callback_update.callback_query.data = "city_only:all"
     mock_db = MagicMock()
+    mock_db.get_notification_hour.return_value = None
 
     with patch("src.bot.handlers.get_db", return_value=mock_db):
         await city_only_callback(mock_callback_update, mock_context)
@@ -308,17 +369,20 @@ async def test_city_only_callback_does_not_touch_hour(
 
 
 @pytest.mark.asyncio
-async def test_city_only_callback_shows_confirmation(
+async def test_city_only_callback_shows_full_confirmation_with_hour(
     mock_callback_update, mock_context
 ):
+    """單獨修改地區後，確認訊息須含時間與地區（不只是地區）。"""
     mock_callback_update.callback_query.data = "city_only:高雄市"
     mock_db = MagicMock()
+    mock_db.get_notification_hour.return_value = 8
 
     with patch("src.bot.handlers.get_db", return_value=mock_db):
         await city_only_callback(mock_callback_update, mock_context)
 
     text = mock_callback_update.callback_query.edit_message_text.call_args.args[0]
     assert "高雄市" in text
+    assert "08:00" in text
 
 
 # ── unsubscribe_btn_callback ───────────────────────────────────────────────────

@@ -94,6 +94,34 @@ def build_hour_keyboard(slot: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def build_slot_keyboard_t() -> InlineKeyboardMarkup:
+    """修改時間專用：slot_t: 前綴，不引導至地區選擇。"""
+    items = list(_SLOT_LABELS.items())
+    rows: list[list[InlineKeyboardButton]] = []
+    for i in range(0, len(items), 2):
+        rows.append(
+            [
+                InlineKeyboardButton(label, callback_data=f"slot_t:{key}")
+                for key, label in items[i : i + 2]
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
+
+
+def build_hour_keyboard_t(slot: str) -> InlineKeyboardMarkup:
+    """修改時間專用：hour_t: 前綴，選完後只更新時間。"""
+    hours = _SLOT_HOURS.get(slot, [])
+    rows: list[list[InlineKeyboardButton]] = []
+    for i in range(0, len(hours), 3):
+        rows.append(
+            [
+                InlineKeyboardButton(f"{h:02d}:00", callback_data=f"hour_t:{h}")
+                for h in hours[i : i + 3]
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
+
+
 def build_region_keyboard(hour: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -168,6 +196,12 @@ def build_settings_keyboard() -> InlineKeyboardMarkup:
 
 def _city_display(city: str) -> str:
     return "全台灣" if city == "all" else city
+
+
+def _settings_confirmation(hour: int, city: str) -> str:
+    return (
+        f"設定完成！每天 {hour:02d}:00 推播 {_city_display(city)} 可報名路跑活動給你。"
+    )
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -246,11 +280,43 @@ async def open_settings_callback(
 async def settings_time_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """修改推播時間：顯示時段選擇鍵盤。"""
+    """修改推播時間：顯示時段選擇鍵盤（slot_t: 前綴，完成後只更新時間）。"""
     query = update.callback_query
     assert query is not None
     await query.answer()
-    await query.edit_message_text(_ASK_SLOT_TEXT, reply_markup=build_slot_keyboard())
+    await query.edit_message_text(_ASK_SLOT_TEXT, reply_markup=build_slot_keyboard_t())
+
+
+async def slot_time_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """修改時間：選擇時段後顯示具體時間按鈕（hour_t: 前綴）。"""
+    query = update.callback_query
+    assert query is not None
+    assert query.data is not None
+    await query.answer()
+    slot = query.data.split(":", 1)[1]
+    label = _SLOT_LABELS.get(slot, slot)
+    await query.edit_message_text(
+        f"你選擇了「{label}」，請選擇具體的推播時間：",
+        reply_markup=build_hour_keyboard_t(slot),
+    )
+
+
+async def hour_time_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """修改時間：只儲存新時段，讀回既有地區，顯示完整確認訊息。"""
+    query = update.callback_query
+    assert query is not None
+    assert query.data is not None
+    assert update.effective_user is not None
+    await query.answer()
+    hour = int(query.data.split(":", 1)[1])
+    db = get_db()
+    db.update_hour(user_id=update.effective_user.id, notification_hour=hour)
+    city = db.get_user_city(update.effective_user.id)
+    await query.edit_message_text(_settings_confirmation(hour, city))
 
 
 async def settings_city_callback(
@@ -310,9 +376,13 @@ async def city_only_callback(
     city = query.data.split(":", 1)[1]
     db = get_db()
     db.update_city(user_id=update.effective_user.id, preferred_city=city)
-
-    city_label = _city_display(city)
-    await query.edit_message_text(f"已更新！將推播 {city_label} 的路跑活動給你。")
+    hour = db.get_notification_hour(update.effective_user.id)
+    msg = (
+        _settings_confirmation(hour, city)
+        if hour is not None
+        else f"已更新！將推播 {_city_display(city)} 的路跑活動給你。"
+    )
+    await query.edit_message_text(msg)
 
 
 async def unsubscribe_btn_callback(

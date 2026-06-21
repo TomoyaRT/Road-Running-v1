@@ -22,12 +22,14 @@ from src.bot.handlers import (
     get_db,
     handle_text_message,
     hour_callback,
+    hour_time_callback,
     open_settings_callback,
     region_callback,
     region_only_callback,
     settings_city_callback,
     settings_time_callback,
     slot_callback,
+    slot_time_callback,
     start_command,
     unsubscribe_btn_callback,
     unsubscribe_command,
@@ -60,7 +62,9 @@ def _build_app() -> Application:  # type: ignore[type-arg]
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
     app.add_handler(CallbackQueryHandler(slot_callback, pattern=r"^slot:"))
+    app.add_handler(CallbackQueryHandler(slot_time_callback, pattern=r"^slot_t:"))
     app.add_handler(CallbackQueryHandler(hour_callback, pattern=r"^hour:"))
+    app.add_handler(CallbackQueryHandler(hour_time_callback, pattern=r"^hour_t:"))
     app.add_handler(CallbackQueryHandler(region_callback, pattern=r"^region:"))
     app.add_handler(
         CallbackQueryHandler(region_only_callback, pattern=r"^region_only:")

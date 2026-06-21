@@ -84,6 +84,14 @@ class FirestoreClient:
             return "all"
         return str(doc.to_dict().get("preferred_city", "all"))
 
+    def update_hour(self, user_id: int, notification_hour: int) -> None:
+        """只更新推播時段，不動城市偏好。"""
+        self._db.collection(_COLLECTION).document(str(user_id)).set(
+            {"notification_hour": notification_hour},
+            merge=True,
+        )
+        logger.info(f"User {user_id} updated hour to {notification_hour}")
+
     def update_city(self, user_id: int, preferred_city: str) -> None:
         """只更新城市偏好，不動推播時段。"""
         self._db.collection(_COLLECTION).document(str(user_id)).set(
@@ -91,6 +99,14 @@ class FirestoreClient:
             merge=True,
         )
         logger.info(f"User {user_id} updated city to {preferred_city}")
+
+    def get_notification_hour(self, user_id: int) -> int | None:
+        """回傳使用者推播時段；未設定或欄位缺漏時回 None。"""
+        doc = self._db.collection(_COLLECTION).document(str(user_id)).get()
+        if not doc.exists:
+            return None
+        hour = doc.to_dict().get("notification_hour")
+        return int(hour) if hour is not None else None
 
     def unsubscribe(self, user_id: int) -> None:
         """刪除使用者的通知訂閱。"""

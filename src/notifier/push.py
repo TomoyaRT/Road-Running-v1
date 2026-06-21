@@ -51,14 +51,7 @@ async def _notify_one_user(
     )
     webapp_url = f"{_get_cloud_run_url()}/webapp?type=open&city={quote(city)}"
     markup = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "瀏覽可報名活動", web_app=WebAppInfo(url=webapp_url)
-                )
-            ],
-            [InlineKeyboardButton("設定", callback_data="open_settings")],
-        ]
+        [[InlineKeyboardButton("瀏覽可報名活動", web_app=WebAppInfo(url=webapp_url))]]
     )
     try:
         await bot.send_message(chat_id=uid, text=text, reply_markup=markup)
