@@ -8,11 +8,12 @@ from datetime import date
 import requests
 from bs4 import BeautifulSoup, Tag
 
-from src.scraper.running_biji import RaceEvent, extract_og_image, find_city
+from src.scraper.city_resolver import resolve_city
+from src.scraper.running_biji import RaceEvent, extract_og_image
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://bao-ming.com/"
+BASE_URL = "https://bao-ming.com/eb/index"
 _HOST = "https://bao-ming.com"
 _HEADERS = {"User-Agent": "Mozilla/5.0"}
 _CN_DATE_RE = re.compile(r"(\d{4})年(\d{1,2})月(\d{1,2})日")
@@ -21,7 +22,7 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=12)
 
 
 def fetch_events(url: str = BASE_URL) -> list[RaceEvent]:
-    """從報名網（bao-ming.com）收集活動連結後，逐一抓詳情頁解析成 RaceEvent。"""
+    """從報名網（bao-ming.com/eb/index）收集活動連結後，逐一抓詳情頁解析成 RaceEvent。"""
     resp = requests.get(url, timeout=15, headers=_HEADERS)
     resp.raise_for_status()
     urls = collect_event_urls(resp.text)
@@ -53,7 +54,7 @@ def _safe_fetch_detail(url: str) -> RaceEvent | None:
         resp.raise_for_status()
         return parse_detail_html(resp.text, url)
     except Exception:
-        logger.warning(f"bao-ming fetch detail failed: {url}")
+        logger.warning("bao-ming fetch detail failed: %s", url)
         return None
 
 
@@ -69,7 +70,9 @@ def parse_detail_html(html: str, url: str) -> RaceEvent | None:
         return None
     reg_start, reg_end = _reg_dates(full_text)
     location = _labeled_text(full_text, "活動地點") or ""
-    city = find_city(location) or find_city(_labeled_text(full_text, "地點", 40) or "")
+    city = resolve_city(location) or resolve_city(
+        _labeled_text(full_text, "地點", 40) or ""
+    )
     return RaceEvent(
         name=name,
         race_date=race_date,
@@ -81,6 +84,7 @@ def parse_detail_html(html: str, url: str) -> RaceEvent | None:
         image_url=extract_og_image(html, base_url=url),
         official_url=url,
         organizer=_labeled_value(soup, "主辦單位"),
+        categories=_extract_categories(soup),
         source="baoming",
     )
 
@@ -91,6 +95,24 @@ def _event_name(soup: BeautifulSoup) -> str:
         return str(meta.get("content")).strip()
     h1 = soup.find("h1")
     return h1.get_text(strip=True) if isinstance(h1, Tag) else ""
+
+
+def _extract_categories(soup: BeautifulSoup) -> list[str]:
+    """從「組別」表頭行取出各報名組別名稱。"""
+    for table in soup.find_all("table"):
+        if not isinstance(table, Tag):
+            continue
+        for row in table.find_all("tr"):
+            if not isinstance(row, Tag):
+                continue
+            cells = [
+                c.get_text(strip=True)
+                for c in row.find_all(["td", "th"])
+                if isinstance(c, Tag)
+            ]
+            if cells and cells[0] == "組別":
+                return [c for c in cells[1:] if c]
+    return []
 
 
 def _parse_dates(text: str) -> list[date]:
