@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.scraper.crawler import crawl_and_store
+from src.scraper.crawler import _filter_relevant, crawl_and_store
 from src.scraper.running_biji import RaceEvent
 
 TODAY = date(2026, 6, 19)
@@ -192,3 +192,30 @@ async def test_crawl_and_store_one_source_failure_does_not_block_others():
     assert count == 1
     stored_names = {e.name for e in db.replace_events.call_args[0][0]}
     assert "開放中路跑" in stored_names
+
+
+# ── _filter_relevant T4: no-reg-date future events ───────────────────────────
+
+
+def _no_reg_ev(name: str, race_date: date) -> RaceEvent:
+    return RaceEvent(
+        name=name,
+        race_date=race_date,
+        location="台北市",
+        url=f"https://sportsnet.org.tw/{name}",
+        reg_start=None,
+        reg_end=None,
+        city="台北市",
+    )
+
+
+def test_filter_relevant_includes_sportsnet_type_event():
+    """sportsnet 型活動（reg_start=None, reg_end=None, race_date 未來）應通過 _filter_relevant。"""
+    ev = _no_reg_ev("sportsnet未來路跑", date(2026, 11, 15))
+    assert any(e.name == "sportsnet未來路跑" for e in _filter_relevant([ev], TODAY))
+
+
+def test_filter_relevant_excludes_sportsnet_past_event():
+    """race_date 已過且缺報名日期的活動不應入庫。"""
+    ev = _no_reg_ev("sportsnet過期路跑", date(2026, 6, 1))
+    assert not any(e.name == "sportsnet過期路跑" for e in _filter_relevant([ev], TODAY))

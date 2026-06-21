@@ -68,9 +68,40 @@ def test_filter_open_events_returns_events_in_registration_period():
     assert not any("Upcoming" in n for n in names)
 
 
-def test_filter_open_events_excludes_no_reg_date():
+def test_filter_open_events_includes_no_reg_date_future():
+    """缺報名日期但活動在未來的活動，歸 open（開放報名中，詳情看官網）。"""
     open_events = filter_open_events(_SAMPLE_EVENTS, TODAY)
-    assert not any("No Calendar" in e.name for e in open_events)
+    assert any("No Calendar" in e.name for e in open_events)
+
+
+def test_filter_open_events_excludes_past_event_with_no_reg():
+    """race_date 已過且缺報名日期的活動不應出現在 open。"""
+    past_ev = RaceEvent(
+        name="Past No Reg Event",
+        race_date=date(2026, 6, 1),
+        location="台北市",
+        url="https://sportsnet.org.tw/past",
+        reg_start=None,
+        reg_end=None,
+        city="台北市",
+    )
+    open_events = filter_open_events([past_ev], TODAY)
+    assert not any("Past No Reg" in e.name for e in open_events)
+
+
+def test_filter_open_events_excludes_joinnow_with_expired_reg_end():
+    """joinnow 型活動（reg_start=None, reg_end 已知且已過）不應出現在 open。"""
+    joinnow_expired = RaceEvent(
+        name="Joinnow Expired Event",
+        race_date=date(2026, 11, 15),
+        location="苗栗縣",
+        url="https://joinnow.com.tw/expired",
+        reg_start=None,
+        reg_end=date(2026, 6, 10),  # 早於 TODAY = 2026-06-19
+        city="苗栗縣",
+    )
+    open_events = filter_open_events([joinnow_expired], TODAY)
+    assert not any("Joinnow Expired" in e.name for e in open_events)
 
 
 # ── filter_upcoming_events ────────────────────────────────────────────────────

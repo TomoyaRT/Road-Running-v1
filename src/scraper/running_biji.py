@@ -83,13 +83,25 @@ def extract_city(location: str) -> str:
 
 
 def filter_open_events(events: list[RaceEvent], today: date) -> list[RaceEvent]:
-    """篩選目前可報名的活動（today 在報名期間內）。"""
+    """篩選目前可報名的活動。
+
+    包含兩種情況：
+    1. 在報名期間內（reg_start <= today <= reg_end）
+    2. 缺報名日期但活動在未來（sportsnet / joinnow 型）——歸 open 分頁
+    """
     return [
         e
         for e in events
-        if e.reg_start is not None
-        and e.reg_end is not None
-        and e.reg_start <= today <= e.reg_end
+        if (
+            e.reg_start is not None
+            and e.reg_end is not None
+            and e.reg_start <= today <= e.reg_end
+        )
+        or (
+            e.reg_start is None
+            and e.race_date > today
+            and (e.reg_end is None or e.reg_end >= today)
+        )
     ]
 
 
